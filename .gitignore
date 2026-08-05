@@ -21,3 +21,6 @@
 
 # secrets
 secrets.*.js
+
+# ide
+.vscode/
