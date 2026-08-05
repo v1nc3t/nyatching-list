@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 
 const count = ref(0)
-const link = ref('https://github.com/guocaoyi/create-chrome-ext')
+const link = ref('https://github.com/v1nc3t/nyatching-list')
 
 const minus = () => {
   if (count.value > 0) count.value--
@@ -24,7 +24,8 @@ watch(count, (newCount) => {
 
 <template>
   <main>
-    <h3>Popup Page</h3>
+    <h3>Nyatching list</h3>
+    <p>List of tv shows and movies currently watching</p>
 
     <div class="calc">
       <button @click="minus" :disabled="count <= 0">-</button>
@@ -66,7 +67,7 @@ watch(count, (newCount) => {
 }
 
 body {
-  min-width: 20rem;
+  min-width: 25rem;
   color-scheme: light dark;
 }
 
@@ -79,7 +80,7 @@ main {
 h3 {
   color: #42b983;
   text-transform: uppercase;
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: 200;
   line-height: 1.2rem;
   margin: 2rem auto;
