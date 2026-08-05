@@ -22,15 +22,22 @@ export default defineManifest({
   },
   content_scripts: [
     {
-      matches: ['http://*/*', 'https://*/*'],
+      matches: [
+        'https://www.imdb.com/title/tt*',
+        'https://m.imdb.com/title/tt*'
+      ],
       js: ['src/contentScript/index.ts'],
     },
   ],
   web_accessible_resources: [
     {
       resources: ['img/logo-16.png', 'img/logo-32.png', 'img/logo-48.png', 'img/logo-128.png'],
-      matches: [],
+      matches: ['https://www.imdb.com/*'],
     },
   ],
-  permissions: ['storage'],
+  permissions: ['storage', 'alarms', 'notifications'],
+  host_permissions: [
+    'https://api.themoviedb.org/3/*',
+    'https://api.tvmaze.com/*'
+  ],
 })
