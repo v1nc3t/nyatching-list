@@ -1,0 +1,39 @@
+{
+  "name": "nyatching-list",
+  "displayName": "nyatching-list",
+  "version": "0.0.0",
+  "author": "**",
+  "description": "",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "chrome-extension",
+    "vue",
+    "vite",
+    "create-chrome-ext"
+  ],
+  "engines": {
+    "node": ">=14.18.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "fmt": "prettier --write '**/*.{vue,ts,json,css,scss,md}'",
+    "zip": "npm run build && node src/zip.js"
+  },
+  "dependencies": {
+    "vue": "^3.3.4"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.26",
+    "@types/chrome": "^0.0.246",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "gulp": "^5.0.0",
+    "gulp-zip": "^6.0.0",
+    "prettier": "^3.0.3",
+    "typescript": "^5.2.2",
+    "vite": "^8.2.0",
+    "vue-tsc": "^3.3.9"
+  }
+}
