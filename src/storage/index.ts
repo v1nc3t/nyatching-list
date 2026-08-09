@@ -29,6 +29,23 @@ function generateFallbackId(title: string): string {
     return `manual-${cleanTitle}-${Date.now()}`;
 }
 
+/**
+ * Safely writes to chrome.storage.local with error catching for quota limits.
+ */
+async function setStorageData(data: Record<string, unknown>): Promise<void> {
+  if (!isStorageAvailable()) return;
+
+  try {
+    await chrome.storage.local.set(data);
+  } catch (error) {
+    if (chrome.runtime?.lastError) {
+      console.error('[Nyatching List] Storage set failed:', chrome.runtime.lastError.message);
+      throw new Error(`Storage operation failed: ${chrome.runtime.lastError.message}`);
+    }
+    throw error;
+  }
+}
+
 // ==========================================
 // LOW-LEVEL READ / WRITE OPERATIONS
 // ==========================================
@@ -87,7 +104,52 @@ export async function saveMedia(item: TrackedMedia): Promise<void> {
         mediaList.push(updatedItem);
     }
 
-    await chrome.storage.local.set({ [STORAGE_KEY]: mediaList });
+    await setStorageData({ [STORAGE_KEY]: mediaList });
+}
+
+// ==========================================
+// SEARCH, FILTER, AND SORT QUERY HELPER
+// ==========================================
+
+export interface MediaQueryOptions {
+  status?: MediaStatus;
+  mediaType?: 'show' | 'movie';
+  searchTerm?: string;
+  sortBy?: 'updatedAt' | 'title';
+  sortOrder?: 'asc' | 'desc';
+}
+
+/**
+ * Queries stored media with optional status, mediaType, search term, and sorting.
+ */
+export async function queryMedia(options: MediaQueryOptions = {}): Promise<TrackedMedia[]> {
+    let list = await getAllMedia();
+
+    if (options.mediaType) {
+        list = list.filter((item) => item.mediaType === options.mediaType);
+    }
+
+    if (options.status) {
+        list = list.filter((item) => item.status === options.status);
+    }
+
+    if (options.searchTerm && options.searchTerm.trim() !== '') {
+        const term = options.searchTerm.toLowerCase().trim();
+        list = list.filter((item) => item.title.toLowerCase().includes(term));
+    }
+
+    const sortBy = options.sortBy ?? 'updatedAt';
+    const sortOrder = options.sortOrder ?? 'desc';
+
+    return list.sort((a, b) => {
+        let comparison = 0;
+        if (sortBy === 'updatedAt') {
+        comparison = a.updatedAt - b.updatedAt;
+        } else if (sortBy === 'title') {
+        comparison = a.title.localeCompare(b.title);
+        }
+        return sortOrder === 'desc' ? -comparison : comparison;
+    });
 }
 
 // ==========================================
@@ -249,7 +311,7 @@ export async function deleteMedia(id: string): Promise<void> {
     const mediaList = await getAllMedia();
     const filteredList = mediaList.filter((item) => item.id !== id);
 
-    await chrome.storage.local.set({ [STORAGE_KEY]: filteredList });
+    await setStorageData({ [STORAGE_KEY]: filteredList });
 }
 
 /**
