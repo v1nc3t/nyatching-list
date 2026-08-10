@@ -20,8 +20,6 @@ const getInitialTheme = (): Theme => {
 
 const theme = ref<Theme>(getInitialTheme())
 
-// The theme lives on <html> (not just this component) so the global
-// html/body background declared below can react to it too.
 const applyThemeToDocument = (t: Theme) => {
   if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('theme-dark', t === 'dark')
@@ -39,6 +37,15 @@ const toggleTheme = () => {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
 }
 
+// Open Dashboard Handler
+const openDashboard = () => {
+  if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
+    chrome.runtime.openOptionsPage()
+  } else if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    window.open(chrome.runtime.getURL('src/dashboard/dashboard.html'))
+  }
+}
+
 // State
 const mediaCount = ref(0)
 const isModalOpen = ref(false)
@@ -53,6 +60,7 @@ const formStatus = ref<MediaStatus>('watching')
 const formSeason = ref(1)
 const formEpisode = ref(1)
 const formMinutes = ref(0)
+const formRuntimeMinutes = ref('')
 const formTotalSeasons = ref('')
 const formReleaseYear = ref('')
 
@@ -76,6 +84,7 @@ const closeModal = () => {
   formSeason.value = 1
   formEpisode.value = 1
   formMinutes.value = 0
+  formRuntimeMinutes.value = ''
   formTotalSeasons.value = ''
   formReleaseYear.value = ''
   errorMessage.value = ''
@@ -93,6 +102,8 @@ const handleAddMediaSubmit = async () => {
   let payload: AddMediaInput
 
   if (formType.value === 'show') {
+    const totalSeasonsNum = Number(formTotalSeasons.value)
+
     payload = {
       mediaType: 'show',
       title: formTitle.value,
@@ -100,16 +111,26 @@ const handleAddMediaSubmit = async () => {
       watchingUrl: formUrl.value,
       currentSeason: formSeason.value,
       currentEpisode: formEpisode.value,
-      ...(formTotalSeasons.value.trim() !== '' ? { totalSeasons: Number(formTotalSeasons.value) } : {})
+      ...(formTotalSeasons.value !== '' && !isNaN(totalSeasonsNum)
+        ? { totalSeasons: totalSeasonsNum }
+        : {})
     }
   } else {
+    const releaseYearNum = Number(formReleaseYear.value)
+    const runtimeMinutesNum = Number(formRuntimeMinutes.value)
+
     payload = {
       mediaType: 'movie',
       title: formTitle.value,
       status: formStatus.value,
       watchingUrl: formUrl.value,
       currentMinutes: formMinutes.value,
-      ...(formReleaseYear.value.trim() !== '' ? { releaseYear: Number(formReleaseYear.value) } : {})
+      ...(formRuntimeMinutes.value !== '' && !isNaN(runtimeMinutesNum)
+        ? { runtimeMinutes: runtimeMinutesNum }
+        : {}),
+      ...(formReleaseYear.value !== '' && !isNaN(releaseYearNum)
+        ? { releaseYear: releaseYearNum }
+        : {})
     }
   }
 
@@ -126,36 +147,65 @@ const handleAddMediaSubmit = async () => {
   <main>
     <div class="header-row">
       <div class="header-text">
-        <h3>Nyatching list</h3>
+        <button
+          type="button"
+          class="title-btn"
+          @click="openDashboard"
+          title="Open Dashboard"
+        >
+          <h3>Nyatching list</h3>
+        </button>
         <p>List of tv shows and movies currently watching</p>
       </div>
 
-      <button
-        type="button"
-        class="icon-btn"
-        @click="toggleTheme"
-        :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
-      >
-        <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-          <circle cx="12" cy="12" r="4.5" fill="currentColor" />
-          <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-            <line x1="12" y1="1.5" x2="12" y2="4" />
-            <line x1="12" y1="20" x2="12" y2="22.5" />
-            <line x1="1.5" y1="12" x2="4" y2="12" />
-            <line x1="20" y1="12" x2="22.5" y2="12" />
-            <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
-            <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
-            <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
-            <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
-          </g>
-        </svg>
-        <svg v-else viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
-          />
-        </svg>
-      </button>
+      <div class="header-actions">
+        <button
+          type="button"
+          class="icon-btn"
+          @click="openDashboard"
+          aria-label="Open Dashboard"
+          title="Open Dashboard"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"
+            />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          class="icon-btn"
+          @click="toggleTheme"
+          :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+          :title="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+        >
+          <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+            <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <line x1="12" y1="1.5" x2="12" y2="4" />
+              <line x1="12" y1="20" x2="12" y2="22.5" />
+              <line x1="1.5" y1="12" x2="4" y2="12" />
+              <line x1="20" y1="12" x2="22.5" y2="12" />
+              <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
+              <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
+              <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
+              <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
+            </g>
+          </svg>
+          <svg v-else viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Summary view -->
@@ -167,8 +217,7 @@ const handleAddMediaSubmit = async () => {
       <button class="primary-btn" @click="openModal">+ Add Item</button>
     </div>
 
-    <!-- Add-media view: swaps in for the count card, so the popup's
-         natural width grows/shrinks to fit whichever view is active. -->
+    <!-- Add-media view -->
     <div v-else class="add-panel">
       <div class="add-panel-header">
         <h4>Add Media</h4>
@@ -260,9 +309,21 @@ const handleAddMediaSubmit = async () => {
           </template>
 
           <template v-else>
-            <div class="form-group">
-              <label for="minutes-input">Current Minutes Watched</label>
-              <input id="minutes-input" v-model.number="formMinutes" type="number" min="0" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="minutes-input">Minutes Watched</label>
+                <input id="minutes-input" v-model.number="formMinutes" type="number" min="0" />
+              </div>
+              <div class="form-group">
+                <label for="runtime-minutes-input">Runtime (mins, optional)</label>
+                <input
+                  id="runtime-minutes-input"
+                  v-model="formRuntimeMinutes"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 120"
+                />
+              </div>
             </div>
             <div class="form-group">
               <label for="release-year-input">Release Year (optional)</label>
@@ -296,11 +357,6 @@ const handleAddMediaSubmit = async () => {
   </main>
 </template>
 
-<!--
-  Unscoped, global styles. These reach outside this component to the
-  actual <html>/<body> the popup renders into, which is what was
-  showing as a white margin before (scoped styles can't touch it).
--->
 <style>
 :root.theme-dark {
   --bg: #242424;
@@ -344,19 +400,18 @@ body {
   padding: 0;
   width: max-content;
   height: max-content;
-  overflow: hidden; /* Prevents scrollbars from appearing */
+  overflow: hidden;
   background: var(--bg);
   color: var(--text-primary);
 }
 </style>
 
-<!-- Scoped component styles with tight vertical rhythm -->
 <style scoped>
 main {
   display: block;
   text-align: center;
   box-sizing: border-box;
-  width: 320px; /* Explicit width allows Chrome popup to grow/shrink vertically */
+  width: 320px;
   padding: 0.85rem;
   background-color: var(--bg);
   color: var(--text-primary);
@@ -386,6 +441,22 @@ main * {
   min-width: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.title-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
 h3 {
   color: var(--accent);
   text-transform: uppercase;
@@ -394,6 +465,11 @@ h3 {
   letter-spacing: 0.03em;
   line-height: 1.2;
   margin: 0 0 0.15rem 0;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.title-btn:hover h3 {
+  color: var(--accent-hover);
 }
 
 p {
@@ -415,6 +491,7 @@ p {
   color: var(--text-primary);
   cursor: pointer;
   padding: 0;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .icon-btn:hover {
