@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import { crx } from '@crxjs/vite-plugin'
 import vue from '@vitejs/plugin-vue'
-import manifest from './src/manifest'
+import manifest from './src/manifest.ts'
 
 export default defineConfig(({ mode }) => {
   return {
