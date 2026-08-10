@@ -2,40 +2,10 @@
 import { ref, onMounted, watch } from 'vue'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
+import { useTheme } from '../utils/theme'
 
-// Theme
-type Theme = 'light' | 'dark'
-const THEME_KEY = 'nyatching-theme'
-
-const getInitialTheme = (): Theme => {
-  if (typeof localStorage !== 'undefined') {
-    const stored = localStorage.getItem(THEME_KEY)
-    if (stored === 'light' || stored === 'dark') return stored
-  }
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
-    return 'light'
-  }
-  return 'dark'
-}
-
-const theme = ref<Theme>(getInitialTheme())
-
-const applyThemeToDocument = (t: Theme) => {
-  if (typeof document === 'undefined') return
-  document.documentElement.classList.toggle('theme-dark', t === 'dark')
-  document.documentElement.classList.toggle('theme-light', t === 'light')
-}
-
-applyThemeToDocument(theme.value)
-
-watch(theme, (t) => {
-  applyThemeToDocument(t)
-  localStorage.setItem(THEME_KEY, t)
-})
-
-const toggleTheme = () => {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-}
+// Theme (Shared via chrome.storage.local)
+const { theme, toggleTheme } = useTheme()
 
 // Open Dashboard Handler
 const openDashboard = () => {

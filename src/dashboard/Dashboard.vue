@@ -2,36 +2,10 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { TrackedMedia, Show, Movie, MediaStatus, isShow, isMovie } from '../types'
 import { getAllMedia, updateMedia, deleteMedia, onMediaStorageChange } from '../storage'
+import { useTheme } from '../utils/theme'
 
-// Theme Setup
-type Theme = 'light' | 'dark'
-const THEME_KEY = 'nyatching-theme'
-
-const getInitialTheme = (): Theme => {
-  if (typeof localStorage !== 'undefined') {
-    const stored = localStorage.getItem(THEME_KEY)
-    if (stored === 'light' || stored === 'dark') return stored
-  }
-  return 'dark'
-}
-
-const theme = ref<Theme>(getInitialTheme())
-
-const applyThemeToDocument = (t: Theme) => {
-  document.documentElement.classList.toggle('theme-dark', t === 'dark')
-  document.documentElement.classList.toggle('theme-light', t === 'light')
-}
-
-applyThemeToDocument(theme.value)
-
-watch(theme, (t) => {
-  applyThemeToDocument(t)
-  localStorage.setItem(THEME_KEY, t)
-})
-
-const toggleTheme = () => {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-}
+// Theme (Shared via chrome.storage.local)
+const { theme, toggleTheme } = useTheme()
 
 // Data State
 const mediaList = ref<TrackedMedia[]>([])
