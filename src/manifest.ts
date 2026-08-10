@@ -35,6 +35,7 @@ export default defineManifest({
       matches: ['https://www.imdb.com/*'],
     },
   ],
+  options_page: 'src/dashboard/index.html',
   permissions: ['storage', 'alarms', 'notifications'],
   host_permissions: [
     'https://api.themoviedb.org/3/*',
