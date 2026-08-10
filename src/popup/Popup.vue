@@ -1,42 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
+import { useTheme } from '../utils/theme'
 
-// Theme
-type Theme = 'light' | 'dark'
-const THEME_KEY = 'nyatching-theme'
+// Theme (Shared via chrome.storage.local)
+const { theme, toggleTheme } = useTheme()
 
-const getInitialTheme = (): Theme => {
-  if (typeof localStorage !== 'undefined') {
-    const stored = localStorage.getItem(THEME_KEY)
-    if (stored === 'light' || stored === 'dark') return stored
+// Open Dashboard Handler
+const openDashboard = () => {
+  if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
+    chrome.runtime.openOptionsPage()
+  } else if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    window.open(chrome.runtime.getURL('src/dashboard/dashboard.html'))
   }
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
-    return 'light'
-  }
-  return 'dark'
-}
-
-const theme = ref<Theme>(getInitialTheme())
-
-// The theme lives on <html> (not just this component) so the global
-// html/body background declared below can react to it too.
-const applyThemeToDocument = (t: Theme) => {
-  if (typeof document === 'undefined') return
-  document.documentElement.classList.toggle('theme-dark', t === 'dark')
-  document.documentElement.classList.toggle('theme-light', t === 'light')
-}
-
-applyThemeToDocument(theme.value)
-
-watch(theme, (t) => {
-  applyThemeToDocument(t)
-  localStorage.setItem(THEME_KEY, t)
-})
-
-const toggleTheme = () => {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
 }
 
 // State
@@ -53,6 +30,7 @@ const formStatus = ref<MediaStatus>('watching')
 const formSeason = ref(1)
 const formEpisode = ref(1)
 const formMinutes = ref(0)
+const formRuntimeMinutes = ref('')
 const formTotalSeasons = ref('')
 const formReleaseYear = ref('')
 
@@ -73,9 +51,11 @@ const closeModal = () => {
   isModalOpen.value = false
   formTitle.value = ''
   formUrl.value = ''
+  formStatus.value = 'watching'
   formSeason.value = 1
   formEpisode.value = 1
   formMinutes.value = 0
+  formRuntimeMinutes.value = ''
   formTotalSeasons.value = ''
   formReleaseYear.value = ''
   errorMessage.value = ''
@@ -87,12 +67,20 @@ const openModal = () => {
   isModalOpen.value = true
 }
 
+const setStatus = (status: MediaStatus) => {
+  formStatus.value = status
+}
+
+const formatStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 const handleAddMediaSubmit = async () => {
   errorMessage.value = ''
 
   let payload: AddMediaInput
 
   if (formType.value === 'show') {
+    const totalSeasonsNum = Number(formTotalSeasons.value)
+
     payload = {
       mediaType: 'show',
       title: formTitle.value,
@@ -100,16 +88,26 @@ const handleAddMediaSubmit = async () => {
       watchingUrl: formUrl.value,
       currentSeason: formSeason.value,
       currentEpisode: formEpisode.value,
-      ...(formTotalSeasons.value.trim() !== '' ? { totalSeasons: Number(formTotalSeasons.value) } : {})
+      ...(formTotalSeasons.value !== '' && !isNaN(totalSeasonsNum)
+        ? { totalSeasons: totalSeasonsNum }
+        : {})
     }
   } else {
+    const releaseYearNum = Number(formReleaseYear.value)
+    const runtimeMinutesNum = Number(formRuntimeMinutes.value)
+
     payload = {
       mediaType: 'movie',
       title: formTitle.value,
       status: formStatus.value,
       watchingUrl: formUrl.value,
       currentMinutes: formMinutes.value,
-      ...(formReleaseYear.value.trim() !== '' ? { releaseYear: Number(formReleaseYear.value) } : {})
+      ...(formRuntimeMinutes.value !== '' && !isNaN(runtimeMinutesNum)
+        ? { runtimeMinutes: runtimeMinutesNum }
+        : {}),
+      ...(formReleaseYear.value !== '' && !isNaN(releaseYearNum)
+        ? { releaseYear: releaseYearNum }
+        : {})
     }
   }
 
@@ -126,36 +124,65 @@ const handleAddMediaSubmit = async () => {
   <main>
     <div class="header-row">
       <div class="header-text">
-        <h3>Nyatching list</h3>
+        <button
+          type="button"
+          class="title-btn"
+          @click="openDashboard"
+          title="Open Dashboard"
+        >
+          <h3>Nyatching list</h3>
+        </button>
         <p>List of tv shows and movies currently watching</p>
       </div>
 
-      <button
-        type="button"
-        class="icon-btn"
-        @click="toggleTheme"
-        :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
-      >
-        <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-          <circle cx="12" cy="12" r="4.5" fill="currentColor" />
-          <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-            <line x1="12" y1="1.5" x2="12" y2="4" />
-            <line x1="12" y1="20" x2="12" y2="22.5" />
-            <line x1="1.5" y1="12" x2="4" y2="12" />
-            <line x1="20" y1="12" x2="22.5" y2="12" />
-            <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
-            <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
-            <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
-            <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
-          </g>
-        </svg>
-        <svg v-else viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
-          />
-        </svg>
-      </button>
+      <div class="header-actions">
+        <button
+          type="button"
+          class="icon-btn"
+          @click="openDashboard"
+          aria-label="Open Dashboard"
+          title="Open Dashboard"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"
+            />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          class="icon-btn"
+          @click="toggleTheme"
+          :aria-label="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+          :title="theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+        >
+          <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+            <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <line x1="12" y1="1.5" x2="12" y2="4" />
+              <line x1="12" y1="20" x2="12" y2="22.5" />
+              <line x1="1.5" y1="12" x2="4" y2="12" />
+              <line x1="20" y1="12" x2="22.5" y2="12" />
+              <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
+              <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
+              <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
+              <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
+            </g>
+          </svg>
+          <svg v-else viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Summary view -->
@@ -167,8 +194,7 @@ const handleAddMediaSubmit = async () => {
       <button class="primary-btn" @click="openModal">+ Add Item</button>
     </div>
 
-    <!-- Add-media view: swaps in for the count card, so the popup's
-         natural width grows/shrinks to fit whichever view is active. -->
+    <!-- Add-media view -->
     <div v-else class="add-panel">
       <div class="add-panel-header">
         <h4>Add Media</h4>
@@ -223,14 +249,34 @@ const handleAddMediaSubmit = async () => {
           />
         </div>
 
-        <div class="form-group">
-          <label for="status-select">Initial Status</label>
-          <select id="status-select" v-model="formStatus">
-            <option value="watching">Watching</option>
-            <option value="waiting">Waiting</option>
-            <option value="completed">Completed</option>
-            <option value="dropped">Dropped</option>
-          </select>
+        <div class="form-group dropdown-group">
+          <label>Initial Status</label>
+          <div class="select">
+            <div class="selected">
+              <span>{{ formatStatus(formStatus) }}</span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                height="1em"
+                viewBox="0 0 512 512"
+                class="arrow"
+              >
+                <path
+                  d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
+                ></path>
+              </svg>
+            </div>
+            <div class="options">
+              <label
+                v-for="st in (['watching', 'waiting', 'completed', 'dropped'] as MediaStatus[])"
+                :key="st"
+                class="option-item"
+                :class="{ active: formStatus === st }"
+                @click="setStatus(st)"
+              >
+                {{ formatStatus(st) }}
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="field-section">
@@ -260,9 +306,21 @@ const handleAddMediaSubmit = async () => {
           </template>
 
           <template v-else>
-            <div class="form-group">
-              <label for="minutes-input">Current Minutes Watched</label>
-              <input id="minutes-input" v-model.number="formMinutes" type="number" min="0" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="minutes-input">Minutes Watched</label>
+                <input id="minutes-input" v-model.number="formMinutes" type="number" min="0" />
+              </div>
+              <div class="form-group">
+                <label for="runtime-minutes-input">Runtime (optional)</label>
+                <input
+                  id="runtime-minutes-input"
+                  v-model="formRuntimeMinutes"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 120"
+                />
+              </div>
             </div>
             <div class="form-group">
               <label for="release-year-input">Release Year (optional)</label>
@@ -296,45 +354,40 @@ const handleAddMediaSubmit = async () => {
   </main>
 </template>
 
-<!--
-  Unscoped, global styles. These reach outside this component to the
-  actual <html>/<body> the popup renders into, which is what was
-  showing as a white margin before (scoped styles can't touch it).
--->
 <style>
 :root.theme-dark {
-  --bg: #242424;
-  --bg-card: #2a2a2a;
-  --bg-input: #1a1a1a;
-  --border: #333333;
-  --text-primary: #ffffff;
-  --text-secondary: #aaaaaa;
-  --text-muted: #888888;
-  --accent: #42b983;
-  --accent-hover: #369b6e;
-  --accent-contrast: #1a1a1a;
-  --accent-soft: rgba(66, 185, 131, 0.22);
+  --bg: #09090b;
+  --bg-card: #121215;
+  --bg-input: #18181c;
+  --border: #27272a;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-contrast: #000000;
+  --accent-soft: rgba(16, 185, 129, 0.22);
   --error-bg: #4a151b;
   --error-text: #ff8a80;
-  --shadow: rgba(0, 0, 0, 0.5);
+  --shadow: rgba(0, 0, 0, 0.65);
   color-scheme: dark;
 }
 
 :root.theme-light {
-  --bg: #f6f6f7;
+  --bg: #f8f9fa;
   --bg-card: #ffffff;
-  --bg-input: #ffffff;
-  --border: #dcdcdc;
-  --text-primary: #1c1c1c;
-  --text-secondary: #555555;
-  --text-muted: #767676;
+  --bg-input: #f1f3f5;
+  --border: #e9ecef;
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --text-muted: #adb5bd;
   --accent: #2f9d6f;
   --accent-hover: #26855d;
   --accent-contrast: #ffffff;
   --accent-soft: rgba(47, 157, 111, 0.16);
   --error-bg: #fbe7e6;
   --error-text: #c0392b;
-  --shadow: rgba(0, 0, 0, 0.12);
+  --shadow: rgba(0, 0, 0, 0.05);
   color-scheme: light;
 }
 
@@ -344,19 +397,18 @@ body {
   padding: 0;
   width: max-content;
   height: max-content;
-  overflow: hidden; /* Prevents scrollbars from appearing */
+  overflow: visible;
   background: var(--bg);
   color: var(--text-primary);
 }
 </style>
 
-<!-- Scoped component styles with tight vertical rhythm -->
 <style scoped>
 main {
   display: block;
   text-align: center;
   box-sizing: border-box;
-  width: 320px; /* Explicit width allows Chrome popup to grow/shrink vertically */
+  width: 320px;
   padding: 0.85rem;
   background-color: var(--bg);
   color: var(--text-primary);
@@ -368,6 +420,7 @@ main {
     Roboto,
     sans-serif;
   transition: background-color 0.15s ease, color 0.15s ease;
+  overflow: visible;
 }
 
 main * {
@@ -386,6 +439,22 @@ main * {
   min-width: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.title-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
 h3 {
   color: var(--accent);
   text-transform: uppercase;
@@ -394,6 +463,11 @@ h3 {
   letter-spacing: 0.03em;
   line-height: 1.2;
   margin: 0 0 0.15rem 0;
+  transition: color 0.15s ease;
+}
+
+.title-btn:hover h3 {
+  color: var(--accent-hover);
 }
 
 p {
@@ -415,6 +489,7 @@ p {
   color: var(--text-primary);
   cursor: pointer;
   padding: 0;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .icon-btn:hover {
@@ -499,16 +574,17 @@ p {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0.75rem;
+  padding: 0.85rem;
   margin-bottom: 0.5rem;
   box-shadow: 0 1px 3px var(--shadow);
+  overflow: visible;
 }
 
 .add-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .add-panel-header h4 {
@@ -526,8 +602,13 @@ p {
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  margin-bottom: 0.45rem;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.dropdown-group {
+  position: relative;
+  z-index: 50;
 }
 
 .form-group label {
@@ -538,9 +619,8 @@ p {
   letter-spacing: 0.03em;
 }
 
-.form-group input,
-.form-group select {
-  padding: 0.35rem 0.5rem;
+.form-group input {
+  padding: 0.4rem 0.55rem;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-input);
@@ -554,26 +634,106 @@ p {
   color: var(--text-muted);
 }
 
-.form-group input:focus,
-.form-group select:focus {
+.form-group input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-.form-group select {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='12' height='12'%3E%3Cpath fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.5rem center;
-  padding-right: 1.5rem;
+/* Custom Interactive Select */
+.select {
   cursor: pointer;
+  position: relative;
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.select::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 6px;
+}
+
+.selected {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: border-color 0.2s ease;
+}
+
+.arrow {
+  height: 8px;
+  width: 12px;
+  transform: rotate(-90deg);
+  fill: var(--text-primary);
+  transition: transform 200ms ease;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  padding: 0.3rem;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px var(--shadow);
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+  transform: translateY(-2px);
+  z-index: 100;
+}
+
+.select:hover > .options {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.select:hover > .selected .arrow {
+  transform: rotate(0deg);
+}
+
+.option-item {
+  border-radius: 5px;
+  padding: 0.35rem 0.55rem;
+  transition: background-color 150ms ease, color 150ms ease;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.option-item:hover {
+  background-color: var(--bg-input);
+  color: var(--accent);
+}
+
+.option-item.active {
+  background-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
 }
 
 .form-row {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .form-row .form-group {
@@ -582,13 +742,13 @@ p {
 }
 
 .field-section {
-  padding-top: 0.35rem;
-  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
   border-top: 1px solid var(--border);
 }
 
 .section-label {
-  margin: 0 0 0.35rem 0;
+  margin: 0 0 0.6rem 0;
   font-size: 0.6rem;
   color: var(--text-muted);
   font-weight: 700;
@@ -638,8 +798,8 @@ p {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
 }
 
 .error-banner {
@@ -648,11 +808,11 @@ p {
   padding: 0.4rem 0.5rem;
   border-radius: 6px;
   font-size: 0.72rem;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.6rem;
 }
 
 footer {
-  margin-top: 0.4rem;
+  margin-top: 0.5rem;
 }
 
 a {

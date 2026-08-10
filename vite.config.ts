@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           popup: 'src/popup/popup.html',
+          dashboard: 'src/dashboard/dashboard.html',
         },
         output: {
           chunkFileNames: 'assets/chunk-[hash].js',
