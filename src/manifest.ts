@@ -17,7 +17,7 @@ export default defineManifest({
     default_icon: 'img/logo-48.png',
   },
   background: {
-    service_worker: 'src/background/index.ts',
+    service_worker: 'src/background/background.ts',
     type: 'module',
   },
   web_accessible_resources: [

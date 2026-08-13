@@ -1,15 +1,48 @@
-import { TrackedMedia, Show, Movie, MediaStatus, isShow, isMovie } from '../types';
+import {
+  TrackedMedia,
+  Show,
+  Movie,
+  MediaStatus,
+  isShow,
+  isMovie,
+  NotificationItem,
+  AppSettings,
+} from '../types';
 
 export interface StorageSchema {
   nyatching_list_media: TrackedMedia[];
+  nyatching_notification_log: NotificationItem[];
+  nyatching_settings: AppSettings;
 }
 
-const STORAGE_KEY: keyof StorageSchema = 'nyatching_list_media';
+const STORAGE_KEY = 'nyatching_list_media' as const;
+const NOTIFICATIONS_STORAGE_KEY = 'nyatching_notification_log' as const;
+const SETTINGS_STORAGE_KEY = 'nyatching_settings' as const;
+
 const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'dropped'];
 
-/**
- * Checks if chrome.storage API is available in the current context.
- */
+// Centralized interval options for UI and background sync
+export const TIME_INTERVAL_OPTIONS = [
+  { label: 'Never', hours: -1, days: -1 },
+  { label: '1 Day', hours: 24, days: 1 },
+  { label: '2 Days', hours: 48, days: 2 },
+  { label: '1 Week', hours: 168, days: 7 },
+  { label: '2 Weeks', hours: 336, days: 14 },
+  { label: '1 Month', hours: 720, days: 30 },
+  { label: '2 Months', hours: 1440, days: 60 },
+  { label: '6 Months', hours: 4320, days: 180 },
+  { label: '1 Year', hours: 8760, days: 365 },
+] as const
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  newSeasonCheckIntervalHours: 24, // Default: 1 Day
+  stallReminderDays: 7, // Default: 1 Week
+}
+
+// ==========================================
+// UTILITY & LOW-LEVEL STORAGE OPERATIONS
+// ==========================================
+
 function isStorageAvailable(): boolean {
   if (typeof chrome === 'undefined' || !chrome.storage?.local) {
     console.warn('[Nyatching List Storage] chrome.storage.local is not available.');
@@ -18,9 +51,6 @@ function isStorageAvailable(): boolean {
   return true;
 }
 
-/**
- * Generates a clean fallback ID from a title if no TMDB/IMDb ID is provided.
- */
 function generateFallbackId(title: string): string {
   const cleanTitle = title
     .toLowerCase()
@@ -29,9 +59,6 @@ function generateFallbackId(title: string): string {
   return `manual-${cleanTitle}-${Date.now()}`;
 }
 
-/**
- * Safely writes to chrome.storage.local with error catching for quota limits.
- */
 async function setStorageData(data: Record<string, unknown>): Promise<void> {
   if (!isStorageAvailable()) return;
 
@@ -47,12 +74,26 @@ async function setStorageData(data: Record<string, unknown>): Promise<void> {
 }
 
 // ==========================================
-// LOW-LEVEL READ / WRITE OPERATIONS
+// SETTINGS OPERATIONS
 // ==========================================
 
-/**
- * Retrieves all stored media (both Shows and Movies).
- */
+export const getSettings = async (): Promise<AppSettings> => {
+  if (!isStorageAvailable()) return DEFAULT_SETTINGS;
+  const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+  return { ...DEFAULT_SETTINGS, ...result[SETTINGS_STORAGE_KEY] };
+};
+
+export const saveSettings = async (settings: Partial<AppSettings>): Promise<AppSettings> => {
+  const current = await getSettings();
+  const updated = { ...current, ...settings };
+  await setStorageData({ [SETTINGS_STORAGE_KEY]: updated });
+  return updated;
+};
+
+// ==========================================
+// READ MEDIA OPERATIONS
+// ==========================================
+
 export async function getAllMedia(): Promise<TrackedMedia[]> {
   if (!isStorageAvailable()) return [];
 
@@ -60,33 +101,21 @@ export async function getAllMedia(): Promise<TrackedMedia[]> {
   return data[STORAGE_KEY] ?? [];
 }
 
-/**
- * Retrieves only TV Shows.
- */
 export async function getShows(): Promise<Show[]> {
   const media = await getAllMedia();
   return media.filter(isShow);
 }
 
-/**
- * Retrieves only Movies.
- */
 export async function getMovies(): Promise<Movie[]> {
   const media = await getAllMedia();
   return media.filter(isMovie);
 }
 
-/**
- * Retrieves a single media item by its unique ID.
- */
 export async function getMediaById(id: string): Promise<TrackedMedia | undefined> {
   const media = await getAllMedia();
   return media.find((item) => item.id === id);
 }
 
-/**
- * Saves a new media item or replaces an existing item matching item.id.
- */
 export async function saveMedia(item: TrackedMedia): Promise<void> {
   if (!isStorageAvailable()) return;
 
@@ -108,7 +137,7 @@ export async function saveMedia(item: TrackedMedia): Promise<void> {
 }
 
 // ==========================================
-// SEARCH, FILTER, AND SORT QUERY HELPER
+// QUERY HELPER
 // ==========================================
 
 export interface MediaQueryOptions {
@@ -119,9 +148,6 @@ export interface MediaQueryOptions {
   sortOrder?: 'asc' | 'desc';
 }
 
-/**
- * Queries stored media with optional status, mediaType, search term, and sorting.
- */
 export async function queryMedia(options: MediaQueryOptions = {}): Promise<TrackedMedia[]> {
   let list = await getAllMedia();
 
@@ -153,10 +179,10 @@ export async function queryMedia(options: MediaQueryOptions = {}): Promise<Track
 }
 
 // ==========================================
-// HIGH-LEVEL ACTION HELPERS WITH VALIDATION
+// HIGH-LEVEL WRITE ACTIONS WITH PROGRESS TRACKING
 // ==========================================
 
-export type AddMediaInput = 
+export type AddMediaInput =
   | ({ mediaType: 'show'; currentSeason: number; currentEpisode: number; totalSeasons?: number } & BaseAddInput)
   | ({ mediaType: 'movie'; currentMinutes: number; runtimeMinutes?: number; releaseYear?: number } & BaseAddInput);
 
@@ -169,9 +195,6 @@ interface BaseAddInput {
   tmdbId?: number;
 }
 
-/**
- * Adds a new media item (Show or Movie) with input validation and duplicate prevention.
- */
 export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
   if (!input.title || typeof input.title !== 'string' || input.title.trim() === '') {
     throw new Error('[Nyatching List] Valid title is required.');
@@ -180,7 +203,6 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
   const trimmedTitle = input.title.trim();
   const existingMedia = await getAllMedia();
 
-  // Check duplicate via tmdbId or title
   const isDuplicate = existingMedia.some((item) => {
     if (input.tmdbId && item.tmdbId && item.tmdbId === input.tmdbId && item.mediaType === input.mediaType) {
       return true;
@@ -192,7 +214,6 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     throw new Error(`[Nyatching List] "${trimmedTitle}" is already in your list.`);
   }
 
-  // Generate ID based on explicit ID -> TMDB ID -> Fallback string
   let finalId = input.id?.trim();
   if (!finalId) {
     if (input.tmdbId) {
@@ -207,6 +228,7 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     throw new Error(`[Nyatching List] Invalid status "${status}".`);
   }
 
+  const now = Date.now();
   const baseData = {
     id: finalId,
     title: trimmedTitle,
@@ -214,7 +236,9 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     watchingUrl: input.watchingUrl?.trim() || '',
     posterPath: input.posterPath?.trim() || undefined,
     tmdbId: input.tmdbId,
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
+    lastProgressUpdate: now,
   };
 
   let newItem: TrackedMedia;
@@ -247,7 +271,8 @@ export type UpdateMediaInput = { id: string } & (
 );
 
 /**
- * Generic update function to modify progress, status, or details for any media item.
+ * Consolidated update function: Validates input fields, handles media-specific details,
+ * and automatically recalculates `lastProgressUpdate` whenever season, episode, or minutes advance.
  */
 export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia> {
   const { id, ...updates } = input;
@@ -265,6 +290,9 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
     throw new Error(`[Nyatching List] Invalid status "${updates.status}".`);
   }
 
+  const now = Date.now();
+  let progressChanged = false;
+
   if (isShow(existingItem)) {
     const showUpdates = updates as Partial<Show>;
     const season = showUpdates.currentSeason ?? existingItem.currentSeason;
@@ -277,12 +305,22 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
       throw new Error('[Nyatching List] Episode must be an integer >= 1.');
     }
 
+    if (
+      (showUpdates.currentSeason !== undefined && showUpdates.currentSeason !== existingItem.currentSeason) ||
+      (showUpdates.currentEpisode !== undefined && showUpdates.currentEpisode !== existingItem.currentEpisode)
+    ) {
+      progressChanged = true;
+    }
+
     const updatedShow: Show = {
       ...existingItem,
       ...showUpdates,
       currentSeason: season,
       currentEpisode: episode,
-      updatedAt: Date.now(),
+      updatedAt: now,
+      lastProgressUpdate: progressChanged
+        ? now
+        : existingItem.lastProgressUpdate || existingItem.createdAt || now,
     };
 
     await saveMedia(updatedShow);
@@ -297,11 +335,18 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
       throw new Error('[Nyatching List] Current minutes must be a non-negative integer.');
     }
 
+    if (movieUpdates.currentMinutes !== undefined && movieUpdates.currentMinutes !== existingItem.currentMinutes) {
+      progressChanged = true;
+    }
+
     const updatedMovie: Movie = {
       ...existingItem,
       ...movieUpdates,
       currentMinutes: minutes,
-      updatedAt: Date.now(),
+      updatedAt: now,
+      lastProgressUpdate: progressChanged
+        ? now
+        : existingItem.lastProgressUpdate || existingItem.createdAt || now,
     };
 
     await saveMedia(updatedMovie);
@@ -315,9 +360,6 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
 // DELETE & CLEAR OPERATIONS
 // ==========================================
 
-/**
- * Deletes a single media item by ID.
- */
 export async function deleteMedia(id: string): Promise<void> {
   if (!isStorageAvailable()) return;
 
@@ -327,9 +369,6 @@ export async function deleteMedia(id: string): Promise<void> {
   await setStorageData({ [STORAGE_KEY]: filteredList });
 }
 
-/**
- * Clears all stored media from local storage.
- */
 export async function clearAllMedia(): Promise<void> {
   if (!isStorageAvailable()) return;
 
@@ -337,13 +376,49 @@ export async function clearAllMedia(): Promise<void> {
 }
 
 // ==========================================
+// NOTIFICATION LOG STORAGE HELPERS
+// ==========================================
+
+export async function getNotificationLog(): Promise<NotificationItem[]> {
+  if (!isStorageAvailable()) return [];
+
+  const data = (await chrome.storage.local.get(NOTIFICATIONS_STORAGE_KEY)) as Partial<StorageSchema>;
+  return data[NOTIFICATIONS_STORAGE_KEY] ?? [];
+}
+
+export async function addNotificationLog(
+  item: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>
+): Promise<NotificationItem[]> {
+  const current = await getNotificationLog();
+  const newItem: NotificationItem = {
+    ...item,
+    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: Date.now(),
+    read: false,
+  };
+
+  const updated = [newItem, ...current];
+  await setStorageData({ [NOTIFICATIONS_STORAGE_KEY]: updated });
+  return updated;
+}
+
+export async function deleteNotificationLogItem(id: string): Promise<NotificationItem[]> {
+  const current = await getNotificationLog();
+  const updated = current.filter((n) => n.id !== id);
+  await setStorageData({ [NOTIFICATIONS_STORAGE_KEY]: updated });
+  return updated;
+}
+
+export async function clearAllNotificationLogs(): Promise<void> {
+  if (!isStorageAvailable()) return;
+
+  await chrome.storage.local.remove(NOTIFICATIONS_STORAGE_KEY);
+}
+
+// ==========================================
 // REACTIVE STORAGE LISTENER
 // ==========================================
 
-/**
- * Listens for changes to nyatching_list_media across extension views.
- * Returns an unbind function to stop listening.
- */
 export function onMediaStorageChange(
   callback: (newMedia: TrackedMedia[]) => void
 ): () => void {

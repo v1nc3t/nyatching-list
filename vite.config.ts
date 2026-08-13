@@ -5,6 +5,18 @@ import manifest from './src/manifest.ts'
 
 export default defineConfig(({ mode }) => {
   return {
+    define: {
+      // Prevents CRXJS client worker ReferenceError in service worker scope
+      '__LIVE_RELOAD__': true,
+      'process.env.NODE_ENV': JSON.stringify(mode),
+    },
+    server: {
+      port: 5173,
+      strictPort: true,
+      ws: {
+        port: 5173,
+      },
+    },
     build: {
       cssCodeSplit: true,
       emptyOutDir: true,

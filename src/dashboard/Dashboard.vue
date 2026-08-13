@@ -1,11 +1,33 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { TrackedMedia, Show, Movie, MediaStatus, isShow, isMovie } from '../types'
-import { getAllMedia, updateMedia, deleteMedia, onMediaStorageChange } from '../storage'
+import {
+  TrackedMedia,
+  Show,
+  Movie,
+  MediaStatus,
+  NotificationItem,
+  isShow,
+  isMovie,
+} from '../types'
+import {
+  getAllMedia,
+  updateMedia,
+  deleteMedia,
+  onMediaStorageChange,
+  getNotificationLog,
+  deleteNotificationLogItem,
+  clearAllNotificationLogs,
+} from '../storage'
 import { useTheme } from '../utils/theme'
+import SettingsModal from './Settings.vue'
 
 // Theme (Shared via chrome.storage.local)
 const { theme, toggleTheme } = useTheme()
+
+// Settings & Notification Drawer State
+const isSettingsOpen = ref(false)
+const isNotificationsOpen = ref(false)
+const notificationLogs = ref<NotificationItem[]>([])
 
 // Data State
 const mediaList = ref<TrackedMedia[]>([])
@@ -18,12 +40,52 @@ const loadMedia = async () => {
   mediaList.value = await getAllMedia()
 }
 
+const loadNotifications = async () => {
+  notificationLogs.value = await getNotificationLog()
+}
+
 onMounted(() => {
   loadMedia()
+  loadNotifications()
+
+  // Reactive Storage Updates
   onMediaStorageChange((newList) => {
     mediaList.value = newList
   })
+
+  // Chrome storage listener for background notifications update
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.nyatching_notification_log) {
+        notificationLogs.value = changes.nyatching_notification_log.newValue || []
+      }
+    })
+  }
 })
+
+// Unread Notification Count
+const unreadCount = computed(() => notificationLogs.value.filter((n) => !n.read).length)
+
+// Notification Handlers
+const handleDismissNotification = async (id: string) => {
+  notificationLogs.value = await deleteNotificationLogItem(id)
+}
+
+const handleClearAllNotifications = async () => {
+  await clearAllNotificationLogs()
+  notificationLogs.value = []
+}
+
+const formatTimestamp = (ts: number): string => {
+  const diffMs = Date.now() - ts
+  const diffMins = Math.floor(diffMs / (1000 * 60))
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays}d ago`
+}
 
 // Track image load errors to fallback gracefully
 const failedPosters = ref<Record<string, boolean>>({})
@@ -36,9 +98,15 @@ const stats = computed(() => {
   const total = mediaList.value.length
   const watching = mediaList.value.filter((i) => i.status === 'watching').length
   const completed = mediaList.value.filter((i) => i.status === 'completed').length
-  const shows = mediaList.value.filter(isShow).length
+  const shows = mediaList.value.filter(isShow)
   const movies = mediaList.value.filter(isMovie).length
-  return { total, watching, completed, shows, movies }
+
+  // Counts shows that are actively tracked (defaults to true if undefined)
+  const tracked = shows.filter(
+    (s) => isTrackableStatus(s.status) && (s.tracked ?? true)
+  ).length
+
+  return { total, watching, completed, shows: shows.length, movies, tracked }
 })
 
 // Filtering & Sorting
@@ -65,6 +133,16 @@ const handleSeasonChange = async (show: Show, delta: number) => {
   }
 
   await updateMedia({ id: show.id, currentSeason: nextSeason, currentEpisode: 1 })
+}
+
+// Track Toggle Helper
+const isTrackableStatus = (status: MediaStatus) => status === 'watching' || status === 'waiting'
+
+const handleTrackToggle = async (show: Show) => {
+  if (!isTrackableStatus(show.status)) return
+
+  const currentlyTracked = show.tracked ?? true
+  await updateMedia({ id: show.id, tracked: !currentlyTracked })
 }
 
 // Handlers for Movie
@@ -112,8 +190,20 @@ const handleMinutesInput = async (event: Event, movie: Movie) => {
   await updateMedia({ id: movie.id, currentMinutes: newMinutes, status: updatedStatus })
 }
 
-const handleStatusChange = async (id: string, status: MediaStatus) => {
-  await updateMedia({ id, status })
+const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) => {
+  if (isShow(item)) {
+    const updates: Partial<Show> & { id: string } = { id: item.id, status: newStatus }
+
+    if (!isTrackableStatus(newStatus)) {
+      updates.tracked = false
+    } else if (!isTrackableStatus(item.status) && isTrackableStatus(newStatus)) {
+      updates.tracked = true
+    }
+
+    await updateMedia(updates)
+  } else {
+    await updateMedia({ id: item.id, status: newStatus })
+  }
 }
 
 const handleDelete = async (id: string) => {
@@ -136,34 +226,133 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
       </div>
 
       <div class="header-right">
-        <button
-          type="button"
-          class="icon-btn"
-          @click="toggleTheme"
-          :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
-        >
-          <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <circle cx="12" cy="12" r="4.5" fill="currentColor" />
-            <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-              <line x1="12" y1="1.5" x2="12" y2="4" />
-              <line x1="12" y1="20" x2="12" y2="22.5" />
-              <line x1="1.5" y1="12" x2="4" y2="12" />
-              <line x1="20" y1="12" x2="22.5" y2="12" />
-              <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
-              <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
-              <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
-              <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
-            </g>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
-            />
-          </svg>
-        </button>
+        <div class="header-actions">
+          <!-- Notification Bell Button with Badge -->
+          <button
+            type="button"
+            class="icon-btn notif-btn"
+            @click="isNotificationsOpen = !isNotificationsOpen"
+            aria-label="Notifications"
+            title="Notifications Log"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span v-if="unreadCount > 0" class="notif-badge">
+              {{ unreadCount > 9 ? '9+' : unreadCount }}
+            </span>
+          </button>
+
+          <!-- Notification Settings Button -->
+          <button
+            type="button"
+            class="icon-btn"
+            @click="isSettingsOpen = true"
+            aria-label="Notification Settings"
+            title="Notification Settings"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+
+          <!-- Theme Toggle Button -->
+          <button
+            type="button"
+            class="icon-btn"
+            @click="toggleTheme"
+            :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
+            :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
+          >
+            <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+              <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                <line x1="12" y1="1.5" x2="12" y2="4" />
+                <line x1="12" y1="20" x2="12" y2="22.5" />
+                <line x1="1.5" y1="12" x2="4" y2="12" />
+                <line x1="20" y1="12" x2="22.5" y2="12" />
+                <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
+                <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
+                <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
+                <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
+              </g>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Settings Modal Portal -->
+        <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" />
       </div>
     </header>
+
+    <!-- Slide-over Notifications Drawer -->
+    <aside v-if="isNotificationsOpen" class="notif-drawer-overlay" @click.self="isNotificationsOpen = false">
+      <div class="notif-drawer">
+        <div class="drawer-header">
+          <h3>Notifications Log</h3>
+          <div class="drawer-actions">
+            <button
+              v-if="notificationLogs.length > 0"
+              class="clear-all-btn"
+              @click="handleClearAllNotifications"
+            >
+              Clear Log
+            </button>
+            <button class="delete-btn" title="Delete" @click="isNotificationsOpen = false">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="drawer-content">
+          <div v-if="notificationLogs.length === 0" class="notif-empty">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <p>No recent release notifications</p>
+          </div>
+
+          <div v-else class="notif-list">
+            <div
+              v-for="item in notificationLogs"
+              :key="item.id"
+              class="notif-item"
+            >
+              <div v-if="item.posterPath" class="notif-poster">
+                <img :src="item.posterPath" :alt="item.title" />
+              </div>
+
+              <div class="notif-body">
+                <div class="notif-title-row">
+                  <span class="notif-title">{{ item.title }}</span>
+                  <span class="notif-time">{{ formatTimestamp(item.timestamp) }}</span>
+                </div>
+                <p class="notif-msg">{{ item.message }}</p>
+              </div>
+
+              <button
+                class="dismiss-notif-btn"
+                title="Dismiss"
+                @click="handleDismissNotification(item.id)"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
 
     <main class="content">
       <!-- Overview Metrics Cards -->
@@ -365,12 +554,76 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
                     :key="st"
                     class="option-item"
                     :class="{ active: item.status === st }"
-                    @click="handleStatusChange(item.id, st)"
+                    @click="handleStatusChange(item, st)"
                   >
                     {{ formatStatus(st) }}
                   </label>
                 </div>
               </div>
+            </div>
+
+            <!-- SHOW ONLY: Automatic Tracking Row (Under Status) -->
+            <div v-if="isShow(item)" class="track-row-box" :class="{ disabled: !isTrackableStatus(item.status) }">
+              <div class="track-info">
+                <span class="track-label">Updates</span>
+                <span
+                  class="track-status"
+                  :class="{ active: isTrackableStatus(item.status) && (item.tracked ?? true) }"
+                >
+                  <template v-if="!isTrackableStatus(item.status)">Unavailable</template>
+                  <template v-else>{{ (item.tracked ?? true) ? 'Active' : 'Disabled' }}</template>
+                </span>
+              </div>
+
+              <button
+                type="button"
+                class="track-toggle-btn"
+                :class="{ 
+                  'is-tracking': isTrackableStatus(item.status) && (item.tracked ?? true),
+                  'is-disabled': !isTrackableStatus(item.status)
+                }"
+                :disabled="!isTrackableStatus(item.status)"
+                @click="handleTrackToggle(item)"
+                :title="
+                  !isTrackableStatus(item.status)
+                    ? 'Tracking is only available for shows in Watching or Waiting status'
+                    : (item.tracked ?? true)
+                    ? 'Disable automatic updates for this show'
+                    : 'Enable automatic updates for this show'
+                "
+              >
+                <svg
+                  v-if="isTrackableStatus(item.status) && (item.tracked ?? true)"
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <svg
+                  v-else
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="16" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+                <span>
+                  {{ !isTrackableStatus(item.status) ? 'Off' : (item.tracked ?? true) ? 'Tracked' : 'Track' }}
+                </span>
+              </button>
             </div>
           </div>
         </article>
@@ -449,6 +702,17 @@ html, body {
   border-bottom: 1px solid var(--border);
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .brand h1 {
   margin: 0;
   font-size: 1.4rem;
@@ -459,6 +723,7 @@ html, body {
 }
 
 .icon-btn {
+  position: relative;
   background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -474,6 +739,169 @@ html, body {
 
 .icon-btn:hover {
   border-color: var(--accent);
+}
+
+/* Notification Bell Badge */
+.notif-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.1rem 0.35rem;
+  border-radius: 10px;
+  border: 2px solid var(--bg-card);
+  line-height: 1;
+}
+
+/* Slide-Over Notification Drawer */
+.notif-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.notif-drawer {
+  width: 380px;
+  max-width: 90vw;
+  height: 100%;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px var(--shadow);
+}
+
+.drawer-header {
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.clear-all-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.clear-all-btn:hover {
+  color: #ef4444;
+}
+
+.drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.notif-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+  gap: 0.5rem;
+}
+
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.notif-item {
+  position: relative;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.notif-poster {
+  width: 36px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.notif-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.notif-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.notif-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notif-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.notif-msg {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.dismiss-notif-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  align-self: flex-start;
+}
+
+.dismiss-notif-btn:hover {
+  color: #ef4444;
 }
 
 .content {
@@ -603,7 +1031,6 @@ html, body {
   font-weight: 600;
 }
 
-/* Toolbar Select Dropdown Height Match */
 .toolbar-select {
   min-width: 145px;
 }
@@ -650,7 +1077,6 @@ html, body {
   margin-bottom: 0.75rem;
 }
 
-/* Status-Box Style Badges with Dynamic Text Colors */
 .type-badge {
   font-size: 0.68rem;
   text-transform: uppercase;
@@ -821,7 +1247,7 @@ html, body {
   flex-direction: column;
 }
 
-.progress-label, .status-label {
+.progress-label, .status-label, .track-label {
   font-size: 0.68rem;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -866,6 +1292,75 @@ html, body {
 .stepper-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* Show Tracking Row Box */
+.track-row-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-input);
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  transition: opacity 0.15s ease;
+}
+
+.track-row-box.disabled {
+  opacity: 0.6;
+}
+
+.track-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.track-status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.track-status.active {
+  color: var(--accent);
+}
+
+.track-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.track-toggle-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.track-toggle-btn.is-tracking {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+.track-toggle-btn.is-tracking:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.track-toggle-btn.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  border-color: var(--border);
 }
 
 /* Status Row & Interactive Uiverse Select */
