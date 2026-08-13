@@ -1,9 +1,36 @@
-import { Show } from './show';
-import { Movie } from './movie';
+export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
 
-export * from './media';
-export * from './show';
-export * from './movie';
-export * from './guards';
+export interface BaseMedia {
+    id: string
+    title: string
+    mediaType: 'show' | 'movie'
+    status: MediaStatus
+    watchingUrl: string
+    posterPath?: string
+    tmdbId?: number
+    updatedAt: number
+}
+
+export interface Show extends BaseMedia {
+    mediaType: 'show'
+    currentSeason: number
+    currentEpisode: number
+    totalSeasons?: number
+}
+
+export interface Movie extends BaseMedia {
+    mediaType: 'movie'
+    currentMinutes: number
+    runtimeMinutes?: number
+    releaseYear?: number
+}
 
 export type TrackedMedia = Show | Movie;
+
+export function isShow(media: TrackedMedia): media is Show {
+  return media.mediaType === 'show';
+}
+
+export function isMovie(media: TrackedMedia): media is Movie {
+  return media.mediaType === 'movie';
+}
