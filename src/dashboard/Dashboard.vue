@@ -3,9 +3,13 @@ import { ref, onMounted, computed } from 'vue'
 import { TrackedMedia, Show, Movie, MediaStatus, isShow, isMovie } from '../types'
 import { getAllMedia, updateMedia, deleteMedia, onMediaStorageChange } from '../storage'
 import { useTheme } from '../utils/theme'
+import SettingsModal from './Settings.vue'
 
 // Theme (Shared via chrome.storage.local)
 const { theme, toggleTheme } = useTheme()
+
+// Settings Modal State
+const isSettingsOpen = ref(false)
 
 // Data State
 const mediaList = ref<TrackedMedia[]>([])
@@ -136,32 +140,53 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
       </div>
 
       <div class="header-right">
-        <button
-          type="button"
-          class="icon-btn"
-          @click="toggleTheme"
-          :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
-        >
-          <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <circle cx="12" cy="12" r="4.5" fill="currentColor" />
-            <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-              <line x1="12" y1="1.5" x2="12" y2="4" />
-              <line x1="12" y1="20" x2="12" y2="22.5" />
-              <line x1="1.5" y1="12" x2="4" y2="12" />
-              <line x1="20" y1="12" x2="22.5" y2="12" />
-              <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
-              <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
-              <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
-              <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
-            </g>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
-            />
-          </svg>
-        </button>
+        <div class="header-actions">
+          <!-- Notification Settings Button -->
+          <button
+            type="button"
+            class="icon-btn"
+            @click="isSettingsOpen = true"
+            aria-label="Notification Settings"
+            title="Notification Settings"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+
+          <!-- Theme Toggle Button -->
+          <button
+            type="button"
+            class="icon-btn"
+            @click="toggleTheme"
+            :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
+            :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
+          >
+            <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+              <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                <line x1="12" y1="1.5" x2="12" y2="4" />
+                <line x1="12" y1="20" x2="12" y2="22.5" />
+                <line x1="1.5" y1="12" x2="4" y2="12" />
+                <line x1="20" y1="12" x2="22.5" y2="12" />
+                <line x1="4.5" y1="4.5" x2="6.2" y2="6.2" />
+                <line x1="17.8" y1="17.8" x2="19.5" y2="19.5" />
+                <line x1="4.5" y1="19.5" x2="6.2" y2="17.8" />
+                <line x1="17.8" y1="6.2" x2="19.5" y2="4.5" />
+              </g>
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M20.7 14.9A8.5 8.5 0 0 1 9.1 3.3a.75.75 0 0 0-.9-1 10 10 0 1 0 13.4 13.5.75.75 0 0 0-1-.9Z"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Settings Modal Portal -->
+        <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" />
       </div>
     </header>
 
@@ -447,6 +472,17 @@ html, body {
   padding: 1.15rem 2.5rem;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .brand h1 {
