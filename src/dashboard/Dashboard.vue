@@ -25,6 +25,12 @@ onMounted(() => {
   })
 })
 
+// Track image load errors to fallback gracefully
+const failedPosters = ref<Record<string, boolean>>({})
+const handlePosterError = (id: string) => {
+  failedPosters.value[id] = true
+}
+
 // Metrics
 const stats = computed(() => {
   const total = mediaList.value.length
@@ -244,12 +250,22 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
             </button>
           </div>
 
-          <!-- Header Layout with Poster Placeholder -->
+          <!-- Header Layout with Poster / Placeholder -->
           <div class="card-header-main">
-            <div class="poster-placeholder">
-              <svg viewBox="0 0 24 24" width="22" height="22" class="poster-icon" aria-hidden="true">
-                <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+            <div class="poster-container">
+              <img
+                v-if="item.posterPath && !failedPosters[item.id]"
+                :src="item.posterPath"
+                :alt="item.title"
+                class="poster-img"
+                loading="lazy"
+                @error="handlePosterError(item.id)"
+              />
+              <div v-else class="poster-placeholder">
+                <svg viewBox="0 0 24 24" width="22" height="22" class="poster-icon" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
             </div>
 
             <h3 class="card-title">
@@ -667,7 +683,7 @@ html, body {
 
 .delete-btn:hover { color: #ff5252; }
 
-/* Expanded Minimalist Poster Placeholder & Card Header */
+/* Poster Container & Card Header */
 .card-header-main {
   display: flex;
   align-items: center;
@@ -675,12 +691,28 @@ html, body {
   margin-bottom: 1rem;
 }
 
-.poster-placeholder {
+.poster-container {
   width: 54px;
   height: 76px;
   flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
   background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+.poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.poster-placeholder {
+  width: 100%;
+  height: 100%;
   border: 1px dashed var(--border);
+  box-sizing: border-box;
   border-radius: 8px;
   display: flex;
   align-items: center;
