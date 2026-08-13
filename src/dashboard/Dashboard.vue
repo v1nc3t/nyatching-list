@@ -1,15 +1,33 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { TrackedMedia, Show, Movie, MediaStatus, isShow, isMovie } from '../types'
-import { getAllMedia, updateMedia, deleteMedia, onMediaStorageChange } from '../storage'
+import {
+  TrackedMedia,
+  Show,
+  Movie,
+  MediaStatus,
+  NotificationItem,
+  isShow,
+  isMovie,
+} from '../types'
+import {
+  getAllMedia,
+  updateMedia,
+  deleteMedia,
+  onMediaStorageChange,
+  getNotificationLog,
+  deleteNotificationLogItem,
+  clearAllNotificationLogs,
+} from '../storage'
 import { useTheme } from '../utils/theme'
 import SettingsModal from './Settings.vue'
 
 // Theme (Shared via chrome.storage.local)
 const { theme, toggleTheme } = useTheme()
 
-// Settings Modal State
+// Settings & Notification Drawer State
 const isSettingsOpen = ref(false)
+const isNotificationsOpen = ref(false)
+const notificationLogs = ref<NotificationItem[]>([])
 
 // Data State
 const mediaList = ref<TrackedMedia[]>([])
@@ -22,12 +40,52 @@ const loadMedia = async () => {
   mediaList.value = await getAllMedia()
 }
 
+const loadNotifications = async () => {
+  notificationLogs.value = await getNotificationLog()
+}
+
 onMounted(() => {
   loadMedia()
+  loadNotifications()
+
+  // Reactive Storage Updates
   onMediaStorageChange((newList) => {
     mediaList.value = newList
   })
+
+  // Chrome storage listener for background notifications update
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.nyatching_notification_log) {
+        notificationLogs.value = changes.nyatching_notification_log.newValue || []
+      }
+    })
+  }
 })
+
+// Unread Notification Count
+const unreadCount = computed(() => notificationLogs.value.filter((n) => !n.read).length)
+
+// Notification Handlers
+const handleDismissNotification = async (id: string) => {
+  notificationLogs.value = await deleteNotificationLogItem(id)
+}
+
+const handleClearAllNotifications = async () => {
+  await clearAllNotificationLogs()
+  notificationLogs.value = []
+}
+
+const formatTimestamp = (ts: number): string => {
+  const diffMs = Date.now() - ts
+  const diffMins = Math.floor(diffMs / (1000 * 60))
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays}d ago`
+}
 
 // Track image load errors to fallback gracefully
 const failedPosters = ref<Record<string, boolean>>({})
@@ -42,7 +100,7 @@ const stats = computed(() => {
   const completed = mediaList.value.filter((i) => i.status === 'completed').length
   const shows = mediaList.value.filter(isShow)
   const movies = mediaList.value.filter(isMovie).length
-  
+
   // Counts shows that are actively tracked (defaults to true if undefined)
   const tracked = shows.filter(
     (s) => isTrackableStatus(s.status) && (s.tracked ?? true)
@@ -81,7 +139,6 @@ const handleSeasonChange = async (show: Show, delta: number) => {
 const isTrackableStatus = (status: MediaStatus) => status === 'watching' || status === 'waiting'
 
 const handleTrackToggle = async (show: Show) => {
-  // Disable manual tracking toggle if not in watching or waiting status
   if (!isTrackableStatus(show.status)) return
 
   const currentlyTracked = show.tracked ?? true
@@ -170,6 +227,23 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
 
       <div class="header-right">
         <div class="header-actions">
+          <!-- Notification Bell Button with Badge -->
+          <button
+            type="button"
+            class="icon-btn notif-btn"
+            @click="isNotificationsOpen = !isNotificationsOpen"
+            aria-label="Notifications"
+            title="Notifications Log"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span v-if="unreadCount > 0" class="notif-badge">
+              {{ unreadCount > 9 ? '9+' : unreadCount }}
+            </span>
+          </button>
+
           <!-- Notification Settings Button -->
           <button
             type="button"
@@ -218,6 +292,67 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
         <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" />
       </div>
     </header>
+
+    <!-- Slide-over Notifications Drawer -->
+    <aside v-if="isNotificationsOpen" class="notif-drawer-overlay" @click.self="isNotificationsOpen = false">
+      <div class="notif-drawer">
+        <div class="drawer-header">
+          <h3>Notifications Log</h3>
+          <div class="drawer-actions">
+            <button
+              v-if="notificationLogs.length > 0"
+              class="clear-all-btn"
+              @click="handleClearAllNotifications"
+            >
+              Clear Log
+            </button>
+            <button class="delete-btn" title="Delete" @click="isNotificationsOpen = false">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="drawer-content">
+          <div v-if="notificationLogs.length === 0" class="notif-empty">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <p>No recent release notifications</p>
+          </div>
+
+          <div v-else class="notif-list">
+            <div
+              v-for="item in notificationLogs"
+              :key="item.id"
+              class="notif-item"
+            >
+              <div v-if="item.posterPath" class="notif-poster">
+                <img :src="item.posterPath" :alt="item.title" />
+              </div>
+
+              <div class="notif-body">
+                <div class="notif-title-row">
+                  <span class="notif-title">{{ item.title }}</span>
+                  <span class="notif-time">{{ formatTimestamp(item.timestamp) }}</span>
+                </div>
+                <p class="notif-msg">{{ item.message }}</p>
+              </div>
+
+              <button
+                class="dismiss-notif-btn"
+                title="Dismiss"
+                @click="handleDismissNotification(item.id)"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
 
     <main class="content">
       <!-- Overview Metrics Cards -->
@@ -588,6 +723,7 @@ html, body {
 }
 
 .icon-btn {
+  position: relative;
   background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -603,6 +739,169 @@ html, body {
 
 .icon-btn:hover {
   border-color: var(--accent);
+}
+
+/* Notification Bell Badge */
+.notif-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.1rem 0.35rem;
+  border-radius: 10px;
+  border: 2px solid var(--bg-card);
+  line-height: 1;
+}
+
+/* Slide-Over Notification Drawer */
+.notif-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.notif-drawer {
+  width: 380px;
+  max-width: 90vw;
+  height: 100%;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px var(--shadow);
+}
+
+.drawer-header {
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.clear-all-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.clear-all-btn:hover {
+  color: #ef4444;
+}
+
+.drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.notif-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+  gap: 0.5rem;
+}
+
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.notif-item {
+  position: relative;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.notif-poster {
+  width: 36px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.notif-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.notif-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.notif-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notif-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.notif-msg {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.dismiss-notif-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  align-self: flex-start;
+}
+
+.dismiss-notif-btn:hover {
+  color: #ef4444;
 }
 
 .content {
@@ -732,7 +1031,6 @@ html, body {
   font-weight: 600;
 }
 
-/* Toolbar Select Dropdown Height Match */
 .toolbar-select {
   min-width: 145px;
 }
@@ -779,7 +1077,6 @@ html, body {
   margin-bottom: 0.75rem;
 }
 
-/* Status-Box Style Badges with Dynamic Text Colors */
 .type-badge {
   font-size: 0.68rem;
   text-transform: uppercase;

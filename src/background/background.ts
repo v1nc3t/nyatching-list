@@ -3,7 +3,7 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
   ;(self as any).__LIVE_RELOAD__ = true
 }
 
-import { getAllMedia, updateMedia } from '../storage'
+import { getAllMedia, updateMedia, addNotificationLog } from '../storage'
 import { getTMDBDetails } from '../services/tmdb'
 import { isShow, Show, TrackedMedia } from '../types'
 
@@ -99,7 +99,7 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
 
       const notificationId = `nyatching_show_${show.id}_${latestSeasons}_${Date.now()}`
 
-      // Create notification without action buttons
+      // Dispatch desktop notification (no buttons)
       chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: icon,
@@ -108,7 +108,15 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
         priority: 2
       })
 
-      // Update season count in local storage
+      // Persist entry into dashboard notification log
+      await addNotificationLog({
+        showId: show.id,
+        title: `New Season: ${show.title}`,
+        message: `Season ${latestSeasons} has been released!`,
+        posterPath: show.posterPath
+      })
+
+      // Update season count in local media storage
       await updateMedia({
         id: show.id,
         totalSeasons: latestSeasons,

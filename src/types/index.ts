@@ -35,3 +35,13 @@ export function isShow(media: TrackedMedia): media is Show {
 export function isMovie(media: TrackedMedia): media is Movie {
   return media.mediaType === 'movie';
 }
+
+export interface NotificationItem {
+  id: string
+  showId: string
+  title: string
+  message: string
+  posterPath?: string
+  timestamp: number
+  read: boolean
+}

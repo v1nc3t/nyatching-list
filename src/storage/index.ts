@@ -1,10 +1,12 @@
-import { TrackedMedia, Show, Movie, MediaStatus, isShow, isMovie } from '../types';
+import { TrackedMedia, Show, Movie, MediaStatus, isShow, isMovie, NotificationItem } from '../types';
 
 export interface StorageSchema {
   nyatching_list_media: TrackedMedia[];
+  nyatching_notification_log: NotificationItem[];
 }
 
-const STORAGE_KEY: keyof StorageSchema = 'nyatching_list_media';
+const STORAGE_KEY = 'nyatching_list_media' as const;
+const NOTIFICATIONS_STORAGE_KEY = 'nyatching_notification_log' as const;
 const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'dropped'];
 
 /**
@@ -334,6 +336,58 @@ export async function clearAllMedia(): Promise<void> {
   if (!isStorageAvailable()) return;
 
   await chrome.storage.local.remove(STORAGE_KEY);
+}
+
+// ==========================================
+// NOTIFICATION LOG STORAGE HELPERS
+// ==========================================
+
+/**
+ * Retrieves all stored notification logs.
+ */
+export async function getNotificationLog(): Promise<NotificationItem[]> {
+  if (!isStorageAvailable()) return [];
+
+  const data = (await chrome.storage.local.get(NOTIFICATIONS_STORAGE_KEY)) as Partial<StorageSchema>;
+  return data[NOTIFICATIONS_STORAGE_KEY] ?? [];
+}
+
+/**
+ * Adds a new notification entry to local storage.
+ */
+export async function addNotificationLog(
+  item: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>
+): Promise<NotificationItem[]> {
+  const current = await getNotificationLog();
+  const newItem: NotificationItem = {
+    ...item,
+    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: Date.now(),
+    read: false,
+  };
+
+  const updated = [newItem, ...current];
+  await setStorageData({ [NOTIFICATIONS_STORAGE_KEY]: updated });
+  return updated;
+}
+
+/**
+ * Deletes an individual notification log entry by ID.
+ */
+export async function deleteNotificationLogItem(id: string): Promise<NotificationItem[]> {
+  const current = await getNotificationLog();
+  const updated = current.filter((n) => n.id !== id);
+  await setStorageData({ [NOTIFICATIONS_STORAGE_KEY]: updated });
+  return updated;
+}
+
+/**
+ * Clears all notification logs from storage.
+ */
+export async function clearAllNotificationLogs(): Promise<void> {
+  if (!isStorageAvailable()) return;
+
+  await chrome.storage.local.remove(NOTIFICATIONS_STORAGE_KEY);
 }
 
 // ==========================================
