@@ -3,7 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
 import { useTheme } from '../utils/theme'
-import { searchTMDB, getTMDBDetails, TMDBSuggestion } from '../services/tmdb'
+import { searchTMDB, getTMDBDetails, fetchTmdbByImdbId, TMDBSuggestion } from '../services/tmdb'
 
 // Theme (Shared via chrome.storage.local)
 const { theme, toggleTheme } = useTheme()
@@ -22,8 +22,9 @@ const mediaCount = ref(0)
 const isModalOpen = ref(false)
 const errorMessage = ref('')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
+const isImdbPage = ref(false)
 
-// Form State for Manual Add
+// Form State
 const formType = ref<'show' | 'movie'>('show')
 const formTitle = ref('')
 const formUrl = ref('')
@@ -40,8 +41,68 @@ const selectedTmdbId = ref<number | undefined>(undefined)
 // TMDB Auto-complete State
 const suggestions = ref<TMDBSuggestion[]>([])
 const showSuggestions = ref(false)
-const isSelectingSuggestion = ref(false) // Flag to suppress watcher re-triggering
+const isSelectingSuggestion = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout>
+
+// Auto-detect Active Tab if on IMDb Title Page
+const detectImdbActiveTab = async (autoOpenModal = true) => {
+  if (typeof chrome === 'undefined' || !chrome.tabs?.query) return
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab || !tab.url) return
+
+    const imdbMatch = tab.url.match(/\/title\/(tt\d+)/i)
+    if (imdbMatch && imdbMatch[1]) {
+      isImdbPage.value = true
+      const imdbId = imdbMatch[1]
+      
+      const tmdbData = await fetchTmdbByImdbId(imdbId)
+
+      if (tmdbData) {
+        // Check if media is already saved in local storage
+        const currentList = await getAllMedia()
+        const canonicalUrl = `https://www.imdb.com/title/${imdbId}/`
+
+        const exists = currentList.some(
+          (item) =>
+            (tmdbData.tmdbId && item.tmdbId === tmdbData.tmdbId) ||
+            (item.watchingUrl && item.watchingUrl.toLowerCase().includes(imdbId.toLowerCase()))
+        )
+
+        if (exists) {
+          errorMessage.value = 'Item is already in your watchlist'
+          isModalOpen.value = false
+          return
+        }
+
+        isSelectingSuggestion.value = true
+        formTitle.value = tmdbData.title
+        formType.value = tmdbData.mediaType
+        formUrl.value = ''
+        selectedPosterPath.value = tmdbData.posterPath
+        selectedTmdbId.value = tmdbData.tmdbId
+
+        if (tmdbData.releaseYear) {
+          formReleaseYear.value = tmdbData.releaseYear.toString()
+        }
+        if (tmdbData.mediaType === 'show' && tmdbData.totalSeasons) {
+          formTotalSeasons.value = tmdbData.totalSeasons.toString()
+        } else if (tmdbData.mediaType === 'movie' && tmdbData.runtimeMinutes) {
+          formRuntimeMinutes.value = tmdbData.runtimeMinutes.toString()
+        }
+
+        if (autoOpenModal) {
+          isModalOpen.value = true
+        }
+      }
+    } else {
+      isImdbPage.value = false
+    }
+  } catch (err) {
+    console.error('Failed to detect IMDb tab:', err)
+  }
+}
 
 // Watch Total Seasons to Reset Current Season to 1
 watch(formTotalSeasons, () => {
@@ -63,7 +124,6 @@ watch(formSeason, (newSeason) => {
 
 // Watch Title Input for Live Suggestions
 watch(formTitle, (newVal) => {
-  // If title was modified programmatically via selection, skip searching again
   if (isSelectingSuggestion.value) {
     isSelectingSuggestion.value = false
     return
@@ -84,7 +144,7 @@ watch(formTitle, (newVal) => {
 })
 
 const selectSuggestion = async (item: TMDBSuggestion) => {
-  isSelectingSuggestion.value = true // Suppress watcher execution
+  isSelectingSuggestion.value = true
   showSuggestions.value = false
   suggestions.value = []
   clearTimeout(debounceTimer)
@@ -98,7 +158,6 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
     formReleaseYear.value = item.year.toString()
   }
 
-  // Fetch deeper metadata (seasons / runtime)
   const details = await getTMDBDetails(item.id, item.mediaType)
   if (details) {
     if (item.mediaType === 'show') {
@@ -109,14 +168,12 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
   }
 }
 
-// Close dropdown smoothly when focus moves away
 const handleBlur = () => {
   setTimeout(() => {
     showSuggestions.value = false
   }, 200)
 }
 
-// Load Data
 const refreshCount = async () => {
   const media = await getAllMedia()
   mediaCount.value = media.length
@@ -124,6 +181,7 @@ const refreshCount = async () => {
 
 onMounted(() => {
   refreshCount()
+  detectImdbActiveTab(true)
   onMediaStorageChange((updatedList) => {
     mediaCount.value = updatedList.length
   })
@@ -148,10 +206,13 @@ const closeModal = () => {
   errorMessage.value = ''
 }
 
-// Modal Handlers
 const openModal = () => {
   errorMessage.value = ''
-  isModalOpen.value = true
+  if (isImdbPage.value) {
+    detectImdbActiveTab(true)
+  } else {
+    isModalOpen.value = true
+  }
 }
 
 const setStatus = (status: MediaStatus) => {
@@ -276,13 +337,20 @@ const handleAddMediaSubmit = async () => {
       </div>
     </div>
 
+    <!-- Global/Context Banner for duplicate notification -->
+    <div v-if="errorMessage && !isModalOpen" class="error-banner">
+      {{ errorMessage }}
+    </div>
+
     <!-- Summary view -->
     <div v-if="!isModalOpen" class="count-card">
       <div class="count-display">
         <span class="count-number">{{ mediaCount }}</span>
-        <span class="count-label">Items in Watchlist</span>
+        <span class="count-label">Media in Watchlist</span>
       </div>
-      <button class="primary-btn" @click="openModal">+ Add Item</button>
+      <button class="primary-btn" @click="openModal">
+        {{ isImdbPage ? '+ from IMDb' : '+ Media' }}
+      </button>
     </div>
 
     <!-- Add-media view -->
@@ -302,6 +370,11 @@ const handleAddMediaSubmit = async () => {
         </button>
       </div>
 
+      <!-- Auto-detected IMDb Badge Notification -->
+      <div v-if="selectedTmdbId && isImdbPage" class="imdb-auto-badge">
+        <span>Detected from IMDb page</span>
+      </div>
+
       <div v-if="errorMessage" class="error-banner">{{ errorMessage }}</div>
 
       <form @submit.prevent="handleAddMediaSubmit">
@@ -316,6 +389,7 @@ const handleAddMediaSubmit = async () => {
             autocomplete="off"
             required
             @focus="showSuggestions = suggestions.length > 0"
+            @blur="handleBlur"
           />
 
           <!-- Auto-complete Suggestions Dropdown -->
@@ -527,9 +601,8 @@ html,
 body {
   margin: 0;
   padding: 0;
-  width: max-content;
-  height: max-content;
-  overflow: visible;
+  width: 320px;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text-primary);
 }
@@ -537,11 +610,11 @@ body {
 
 <style scoped>
 main {
-  display: block;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
   width: 320px;
-  padding: 0.85rem;
+  padding: 0.75rem;
   background-color: var(--bg);
   color: var(--text-primary);
   font-family:
@@ -552,7 +625,7 @@ main {
     Roboto,
     sans-serif;
   transition: background-color 0.15s ease, color 0.15s ease;
-  overflow: visible;
+  overflow: hidden;
 }
 
 main * {
@@ -590,11 +663,11 @@ main * {
 h3 {
   color: var(--accent);
   text-transform: uppercase;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: 0.03em;
-  line-height: 1.2;
-  margin: 0 0 0.15rem 0;
+  line-height: 1.1;
+  margin: 0 0 0.1rem 0;
   transition: color 0.15s ease;
 }
 
@@ -604,8 +677,8 @@ h3 {
 
 p {
   color: var(--text-secondary);
-  font-size: 0.78rem;
-  margin: 0 0 0.75rem 0;
+  font-size: 0.74rem;
+  margin: 0 0 0.5rem 0;
 }
 
 .icon-btn {
@@ -613,8 +686,8 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 1.7rem;
+  height: 1.7rem;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -638,8 +711,8 @@ p {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0.85rem 1rem;
-  margin-bottom: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 0.5rem;
   box-shadow: 0 1px 3px var(--shadow);
 }
 
@@ -650,23 +723,23 @@ p {
 }
 
 .count-number {
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   font-weight: 700;
   color: var(--accent);
   line-height: 1;
 }
 
 .count-label {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-top: 0.2rem;
+  margin-top: 0.15rem;
 }
 
 .primary-btn {
-  font-size: 0.8rem;
-  padding: 0.45rem 0.9rem;
+  font-size: 0.78rem;
+  padding: 0.4rem 0.8rem;
   border: 1px solid var(--accent);
   border-radius: 6px;
   background-color: var(--accent);
@@ -687,9 +760,9 @@ p {
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid transparent;
-  padding: 0.45rem 0.75rem;
+  padding: 0.38rem 0.65rem;
   border-radius: 6px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   cursor: pointer;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
@@ -706,36 +779,49 @@ p {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0.85rem;
-  margin-bottom: 0.5rem;
+  padding: 0.7rem;
+  margin-bottom: 0.35rem;
   box-shadow: 0 1px 3px var(--shadow);
-  overflow: visible;
 }
 
 .add-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .add-panel-header h4 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: var(--accent);
 }
 
 .add-panel-header .icon-btn {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.imdb-auto-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 0.28rem 0.45rem;
+  border-radius: 5px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  margin-bottom: 0.45rem;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.75rem;
+  gap: 0.2rem;
+  margin-bottom: 0.45rem;
 }
 
 .dropdown-group {
@@ -744,7 +830,7 @@ p {
 }
 
 .form-group label {
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   color: var(--text-secondary);
   font-weight: 600;
   text-transform: uppercase;
@@ -752,12 +838,12 @@ p {
 }
 
 .form-group input {
-  padding: 0.4rem 0.55rem;
-  border-radius: 6px;
+  padding: 0.32rem 0.48rem;
+  border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg-input);
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-family: inherit;
   width: 100%;
 }
@@ -785,18 +871,18 @@ p {
   right: 0;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 4px 14px var(--shadow);
-  max-height: 180px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px var(--shadow);
+  max-height: 140px;
   overflow-y: auto;
-  margin-top: 0.2rem;
+  margin-top: 0.15rem;
 }
 
 .suggestion-item {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.4rem 0.55rem;
+  gap: 0.45rem;
+  padding: 0.3rem 0.45rem;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
   transition: background-color 0.12s ease;
@@ -811,32 +897,32 @@ p {
 }
 
 .suggestion-poster {
-  width: 24px;
-  height: 36px;
+  width: 20px;
+  height: 30px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
 .suggestion-poster-placeholder {
-  width: 24px;
-  height: 36px;
+  width: 20px;
+  height: 30px;
   background: var(--bg-input);
   border: 1px dashed var(--border);
-  border-radius: 4px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
 .suggestion-info {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.1rem;
   text-align: left;
   min-width: 0;
 }
 
 .suggestion-title {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -847,15 +933,15 @@ p {
 .suggestion-meta {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
 .suggestion-meta .badge {
-  font-size: 0.55rem;
+  font-size: 0.52rem;
   text-transform: uppercase;
   font-weight: 800;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+  padding: 0.08rem 0.3rem;
+  border-radius: 3px;
   background: var(--bg-input);
   border: 1px solid var(--border);
 }
@@ -869,7 +955,7 @@ p {
 }
 
 .suggestion-meta .year {
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   color: var(--text-muted);
 }
 
@@ -881,21 +967,12 @@ p {
   width: 100%;
 }
 
-.select::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  height: 6px;
-}
-
 .selected {
   background-color: var(--bg-input);
   border: 1px solid var(--border);
-  padding: 0.4rem 0.55rem;
-  border-radius: 6px;
-  font-size: 0.78rem;
+  padding: 0.32rem 0.48rem;
+  border-radius: 5px;
+  font-size: 0.75rem;
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -904,8 +981,8 @@ p {
 }
 
 .arrow {
-  height: 8px;
-  width: 12px;
+  height: 7px;
+  width: 10px;
   transform: rotate(-90deg);
   fill: var(--text-primary);
   transition: transform 200ms ease;
@@ -914,11 +991,11 @@ p {
 .options {
   display: flex;
   flex-direction: column;
-  border-radius: 8px;
-  padding: 0.3rem;
+  border-radius: 6px;
+  padding: 0.25rem;
   background-color: var(--bg-card);
   border: 1px solid var(--border);
-  box-shadow: 0 4px 14px var(--shadow);
+  box-shadow: 0 4px 12px var(--shadow);
   position: absolute;
   top: 100%;
   left: 0;
@@ -943,10 +1020,10 @@ p {
 }
 
 .option-item {
-  border-radius: 5px;
-  padding: 0.35rem 0.55rem;
+  border-radius: 4px;
+  padding: 0.28rem 0.45rem;
   transition: background-color 150ms ease, color 150ms ease;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 500;
   color: var(--text-primary);
   cursor: pointer;
@@ -965,8 +1042,8 @@ p {
 
 .form-row {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  gap: 0.4rem;
+  margin-bottom: 0.45rem;
 }
 
 .form-row .form-group {
@@ -975,14 +1052,14 @@ p {
 }
 
 .field-section {
-  padding-top: 0.75rem;
-  margin-top: 0.75rem;
+  padding-top: 0.45rem;
+  margin-top: 0.45rem;
   border-top: 1px solid var(--border);
 }
 
 .section-label {
-  margin: 0 0 0.6rem 0;
-  font-size: 0.6rem;
+  margin: 0 0 0.35rem 0;
+  font-size: 0.58rem;
   color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
@@ -994,7 +1071,7 @@ p {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 0.15rem;
+  padding: 0.12rem;
   gap: 0.1rem;
 }
 
@@ -1014,9 +1091,9 @@ p {
 
 .segment span {
   display: block;
-  padding: 0.25rem 0.75rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 500;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -1031,25 +1108,27 @@ p {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.85rem;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
 }
 
 .error-banner {
   background: var(--error-bg);
   color: var(--error-text);
-  padding: 0.4rem 0.5rem;
-  border-radius: 6px;
-  font-size: 0.72rem;
-  margin-bottom: 0.6rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 5px;
+  font-size: 0.68rem;
+  margin-bottom: 0.45rem;
+  text-align: center;
 }
 
 footer {
-  margin-top: 0.5rem;
+  margin-top: 0.35rem;
+  text-align: center;
 }
 
 a {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
   text-decoration: none;
 }
