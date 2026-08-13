@@ -20,15 +20,6 @@ export default defineManifest({
     service_worker: 'src/background/index.ts',
     type: 'module',
   },
-  content_scripts: [
-    {
-      matches: [
-        'https://www.imdb.com/title/tt*',
-        'https://m.imdb.com/title/tt*'
-      ],
-      js: ['src/contentScript/index.ts'],
-    },
-  ],
   web_accessible_resources: [
     {
       resources: ['img/logo-16.png', 'img/logo-32.png', 'img/logo-48.png', 'img/logo-128.png'],
@@ -39,6 +30,6 @@ export default defineManifest({
   permissions: ['storage', 'alarms', 'notifications'],
   host_permissions: [
     'https://api.themoviedb.org/3/*',
-    'https://api.tvmaze.com/*'
+    "https://www.imdb.com/*"
   ],
 })
