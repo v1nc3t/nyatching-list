@@ -1,16 +1,26 @@
+// Safe polyfill for CRXJS HMR client worker in ServiceWorker scope
+if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'undefined') {
+  ;(self as any).__LIVE_RELOAD__ = true
+}
+
 import { getAllMedia, updateMedia } from '../storage'
 import { getTMDBDetails } from '../services/tmdb'
-import { isShow } from '../types'
+import { isShow, Show, TrackedMedia } from '../types'
+
+// ==========================================
+// CONSTANTS & TYPES
+// ==========================================
 
 const ALARM_NAME = 'nyatching_daily_check'
 
-// ==========================================
-// TYPES & SETTINGS MANAGERS
-// ==========================================
-
 export interface NotificationSettings {
   enabled: boolean
-  intervalMinutes: number // Default 1440 (24 hours), Max 43200 (30 days)
+  intervalMinutes: number // Default 1440 (24h)
+}
+
+export interface SystemMessage {
+  action: 'TRIGGER_CHECK' | 'UPDATE_SETTINGS'
+  payload?: Partial<NotificationSettings>
 }
 
 const DEFAULT_SETTINGS: NotificationSettings = {
@@ -18,105 +28,177 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   intervalMinutes: 1440
 }
 
-/**
- * Retrieves notification settings from local storage.
- */
+// ==========================================
+// SETTINGS & ALARM MANAGEMENT
+// ==========================================
+
 export const getNotificationSettings = async (): Promise<NotificationSettings> => {
-  const result = await chrome.storage.local.get('notification_settings')
-  return result.notification_settings || DEFAULT_SETTINGS
+  try {
+    const result = await chrome.storage.local.get('notification_settings')
+    return result.notification_settings || DEFAULT_SETTINGS
+  } catch (error) {
+    console.error('[Nyatching Storage] Failed to load settings:', error)
+    return DEFAULT_SETTINGS
+  }
 }
 
-/**
- * Saves notification settings and reconfigures the background alarm.
- */
 export const saveNotificationSettings = async (settings: NotificationSettings): Promise<void> => {
   await chrome.storage.local.set({ notification_settings: settings })
   await setupAlarm()
 }
 
-/**
- * Configures or removes the Chrome Alarm depending on active settings.
- * Ensures initial run triggers seamlessly without waiting for the full initial period delay.
- */
 export const setupAlarm = async (): Promise<void> => {
   await chrome.alarms.clear(ALARM_NAME)
   const settings = await getNotificationSettings()
 
   if (settings.enabled) {
-    // Sanity check: Ensure interval is a positive number
     const period = Math.max(1, settings.intervalMinutes)
-
     chrome.alarms.create(ALARM_NAME, {
-      delayInMinutes: period, // First trigger occurs after designated period
+      delayInMinutes: period,
       periodInMinutes: period
     })
   }
 }
 
 // ==========================================
+// UTILITY HELPERS
+// ==========================================
+
+const isTrackedShow = (media: TrackedMedia): media is Show => {
+  if (!isShow(media)) return false
+  if (!media.tmdbId) return false
+
+  if (typeof media.tracked === 'boolean') {
+    return media.tracked
+  }
+
+  return media.status === 'waiting'
+}
+
+// ==========================================
 // POLLING LOGIC
 // ==========================================
 
-/**
- * Checks all shows with 'waiting' status against TMDB for new season releases.
- */
+const processShowUpdate = async (show: Show): Promise<boolean> => {
+  if (!show.tmdbId) return false
+
+  try {
+    const tmdbData = await getTMDBDetails(show.tmdbId, 'show')
+    const latestSeasons: number | undefined = tmdbData?.number_of_seasons
+
+    if (typeof latestSeasons !== 'number' || latestSeasons <= 0) {
+      return false
+    }
+
+    const lastKnown: number = show.totalSeasons || 0
+
+    if (latestSeasons > lastKnown) {
+      const icon = show.posterPath && show.posterPath.startsWith('http')
+        ? show.posterPath
+        : 'img/logo-128.png'
+
+      const notificationId = `nyatching_show_${show.id}_${latestSeasons}_${Date.now()}`
+
+      // Create notification without action buttons
+      chrome.notifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: icon,
+        title: `New Season: ${show.title}`,
+        message: `Season ${latestSeasons} is available! Click to open dashboard.`,
+        priority: 2
+      })
+
+      // Update season count in local storage
+      await updateMedia({
+        id: show.id,
+        totalSeasons: latestSeasons,
+        status: 'waiting'
+      })
+
+      return true
+    }
+  } catch (err) {
+    console.error(`[Nyatching Background] Error processing show "${show.title}":`, err)
+  }
+
+  return false
+}
+
 export const checkWaitingShows = async (): Promise<void> => {
   const settings = await getNotificationSettings()
   if (!settings.enabled) return
 
-  const allMedia = await getAllMedia()
+  try {
+    const allMedia: TrackedMedia[] = await getAllMedia()
+    const trackedShows = allMedia.filter(isTrackedShow)
 
-  // Type-narrow array to Show[] and filter for waiting status
-  const waitingShows = allMedia
-    .filter(isShow)
-    .filter((show) => show.status === 'waiting' && show.tmdbId)
+    if (trackedShows.length === 0) return
 
-  for (const show of waitingShows) {
-    if (!show.tmdbId) continue
-
-    try {
-      const tmdbData = await getTMDBDetails(show.tmdbId, 'show')
-      if (!tmdbData || !tmdbData.number_of_seasons) continue
-
-      const latestSeasons: number = tmdbData.number_of_seasons
-      const lastKnown: number = show.totalSeasons || 0
-
-      if (latestSeasons > lastKnown) {
-        // Trigger Chrome Desktop Notification
-        chrome.notifications.create(`new_season_${show.id}_${latestSeasons}`, {
-          type: 'basic',
-          iconUrl: show.posterPath || '/assets/icon128.png',
-          title: 'New Season Available!',
-          message: `Season ${latestSeasons} of "${show.title}" has been released!`,
-          priority: 2
-        })
-
-        // Update stored last_known totalSeasons using the single-object UpdateMediaInput
-        await updateMedia({
-          id: show.id,
-          totalSeasons: latestSeasons
-        })
-      }
-    } catch (err) {
-      console.error(`[Nyatching Background] Failed to poll TMDB for "${show.title}":`, err)
+    for (const show of trackedShows) {
+      await processShowUpdate(show)
     }
+  } catch (error) {
+    console.error('[Nyatching Background] Critical error during show polling:', error)
   }
 }
 
+if (typeof self !== 'undefined') {
+  ;(self as any).checkWaitingShows = checkWaitingShows
+}
+
 // ==========================================
-// SERVICE WORKER LISTENERS
+// NOTIFICATION ACTION LISTENERS
 // ==========================================
 
-chrome.runtime.onInstalled.addListener(() => {
-  setupAlarm()
+/**
+ * Handles clicks anywhere on the notification body.
+ */
+chrome.notifications.onClicked.addListener(async (notificationId) => {
+  if (notificationId.startsWith('nyatching_show_')) {
+    const dashboardUrl = chrome.runtime.getURL('src/dashboard/dashboard.html')
+    const tabs = await chrome.tabs.query({ url: dashboardUrl })
+
+    if (tabs.length > 0 && tabs[0].id) {
+      await chrome.tabs.update(tabs[0].id, { active: true })
+    } else {
+      await chrome.tabs.create({ url: dashboardUrl })
+    }
+
+    chrome.notifications.clear(notificationId)
+  }
 })
 
-chrome.runtime.onStartup.addListener(() => {
-  setupAlarm()
+// ==========================================
+// SERVICE WORKER LIFECYCLE LISTENERS
+// ==========================================
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await setupAlarm()
+})
+
+chrome.runtime.onStartup.addListener(async () => {
+  await setupAlarm()
 })
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) {
     checkWaitingShows()
+  }
+})
+
+chrome.runtime.onMessage.addListener((message: SystemMessage, _sender, sendResponse) => {
+  if (message.action === 'TRIGGER_CHECK') {
+    checkWaitingShows()
+      .then(() => sendResponse({ status: 'success' }))
+      .catch((err) => sendResponse({ status: 'error', error: String(err) }))
+    return true
+  }
+
+  if (message.action === 'UPDATE_SETTINGS' && message.payload) {
+    getNotificationSettings()
+      .then((current) => saveNotificationSettings({ ...current, ...message.payload }))
+      .then(() => sendResponse({ status: 'success' }))
+      .catch((err) => sendResponse({ status: 'error', error: String(err) }))
+    return true
   }
 })
