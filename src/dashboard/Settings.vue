@@ -1,50 +1,113 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { saveNotificationSettings } from '../background/background.ts'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { AppSettings } from '../types'
+import { getSettings, saveSettings } from '../storage'
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{
+  (e: 'close'): void
+}>()
 
-const enabled = ref(true)
-const intervalMinutes = ref(1440) // Default 24 Hours
+const isSaving = ref(false)
 
-const optionsList = [
-  { label: 'Every Hour', value: 60 },
-  { label: 'Every 6 Hours', value: 360 },
-  { label: 'Every 12 Hours', value: 720 },
-  { label: 'Daily (24 Hours)', value: 1440 },
-  { label: 'Every 2 Days (48 Hours)', value: 2880 },
-  { label: 'Weekly (7 Days)', value: 10080 },
-  { label: 'Bi-Weekly (14 Days)', value: 20160 },
-  { label: 'Monthly (30 Days)', value: 43200 }
+// Dropdown state controls
+const isOpenSeason = ref(false)
+const isOpenStall = ref(false)
+
+const settings = ref<AppSettings>({
+  newSeasonCheckIntervalHours: 24,
+  stallReminderDays: 7,
+  enableSystemNotifications: true,
+})
+
+// Episode Check Interval Options (Value in Hours)
+const seasonOptions = [
+  { label: '1 Day', value: 24 },
+  { label: '2 Days', value: 48 },
+  { label: '1 Week', value: 168 },
+  { label: '2 Weeks', value: 336 },
+  { label: '1 Month', value: 720 },
+  { label: '2 Months', value: 1440 },
+  { label: '6 Months', value: 4320 },
+  { label: '1 Year', value: 8760 },
 ]
 
-const selectedLabel = computed(() => {
-  const match = optionsList.find((opt) => opt.value === intervalMinutes.value)
-  return match ? match.label : 'Select frequency'
+// Inactivity Reminder Options (Value in Days)
+const stallOptions = [
+  { label: '1 Day', value: 1 },
+  { label: '2 Days', value: 2 },
+  { label: '1 Week', value: 7 },
+  { label: '2 Weeks', value: 14 },
+  { label: '1 Month', value: 30 },
+  { label: '2 Months', value: 60 },
+  { label: '6 Months', value: 180 },
+  { label: '1 Year', value: 365 },
+]
+
+const selectedSeasonLabel = computed(() => {
+  const match = seasonOptions.find((opt) => opt.value === settings.value.newSeasonCheckIntervalHours)
+  return match ? match.label : 'Select interval'
 })
 
-onMounted(async () => {
-  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-    const res = await chrome.storage.local.get('notification_settings')
-    if (res.notification_settings) {
-      enabled.value = res.notification_settings.enabled ?? true
-      intervalMinutes.value = res.notification_settings.intervalMinutes ?? 1440
-    }
+const selectedStallLabel = computed(() => {
+  const match = stallOptions.find((opt) => opt.value === settings.value.stallReminderDays)
+  return match ? match.label : 'Select threshold'
+})
+
+// Close dropdowns when clicking outside
+const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  if (!target.closest('.select-season')) {
+    isOpenSeason.value = false
   }
-})
-
-const selectOption = (val: number) => {
-  intervalMinutes.value = val
+  if (!target.closest('.select-stall')) {
+    isOpenStall.value = false
+  }
 }
 
-const saveSettings = async () => {
-  // Delegate storage saving & chrome.alarms setup to background.ts helper
-  await saveNotificationSettings({
-    enabled: enabled.value,
-    intervalMinutes: Number(intervalMinutes.value)
-  })
-  
-  emit('close')
+onMounted(async () => {
+  settings.value = await getSettings()
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
+
+const toggleSeasonDropdown = () => {
+  isOpenSeason.value = !isOpenSeason.value
+  isOpenStall.value = false
+}
+
+const toggleStallDropdown = () => {
+  isOpenStall.value = !isOpenStall.value
+  isOpenSeason.value = false
+}
+
+const selectSeasonOption = (val: number) => {
+  settings.value.newSeasonCheckIntervalHours = val
+  isOpenSeason.value = false
+}
+
+const selectStallOption = (val: number) => {
+  settings.value.stallReminderDays = val
+  isOpenStall.value = false
+}
+
+const handleSave = async () => {
+  isSaving.value = true
+  try {
+    await saveSettings(settings.value)
+
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings: settings.value })
+    }
+
+    emit('close')
+  } catch (error) {
+    console.error('[Nyatching List] Failed to save settings:', error)
+  } finally {
+    isSaving.value = false
+  }
 }
 </script>
 
@@ -52,52 +115,73 @@ const saveSettings = async () => {
   <div class="modal-overlay" @click.self="emit('close')">
     <div class="modal-card">
       <div class="modal-header">
-        <h4>Settings</h4>
+        <h4>Notification Settings</h4>
         <button type="button" class="close-btn" aria-label="Close settings" @click="emit('close')">✕</button>
       </div>
 
-      <div class="form-group">
-        <label class="toggle-label">
-          <span>Enable Background Check</span>
-          <input type="checkbox" v-model="enabled" class="toggle-checkbox" />
-        </label>
-      </div>
+      <div class="modal-body">
+        <!-- Desktop Notifications Toggle -->
+        <div class="form-group">
+          <label class="toggle-label">
+            <span>Desktop System Notifications</span>
+            <input type="checkbox" v-model="settings.enableSystemNotifications" class="toggle-checkbox" />
+          </label>
+        </div>
 
-      <div v-if="enabled" class="form-group">
-        <label>Check Frequency</label>
-        
-        <!-- Dashboard-style Select Dropdown -->
-        <div class="select modal-select">
-          <div class="selected">
-            <span>{{ selectedLabel }}</span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              height="1em"
-              viewBox="0 0 512 512"
-              class="arrow"
-            >
-              <path
-                d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
-              ></path>
-            </svg>
+        <!-- New Season/Episode Check Frequency -->
+        <div class="form-group">
+          <label>New Episode Check Frequency</label>
+          <div class="select select-season" :class="{ 'is-open': isOpenSeason }">
+            <div class="selected" @click="toggleSeasonDropdown">
+              <span>{{ selectedSeasonLabel }}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 512 512" class="arrow">
+                <path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"></path>
+              </svg>
+            </div>
+            <div v-show="isOpenSeason" class="options">
+              <label
+                v-for="opt in seasonOptions"
+                :key="opt.value"
+                class="option-item"
+                :class="{ active: settings.newSeasonCheckIntervalHours === opt.value }"
+                @click="selectSeasonOption(opt.value)"
+              >
+                {{ opt.label }}
+              </label>
+            </div>
           </div>
-          <div class="options">
-            <label
-              v-for="opt in optionsList"
-              :key="opt.value"
-              class="option-item"
-              :class="{ active: intervalMinutes === opt.value }"
-              @click="selectOption(opt.value)"
-            >
-              {{ opt.label }}
-            </label>
+        </div>
+
+        <!-- Inactivity Reminder Frequency -->
+        <div class="form-group">
+          <label>Inactivity Reminder Frequency</label>
+          <div class="select select-stall" :class="{ 'is-open': isOpenStall }">
+            <div class="selected" @click="toggleStallDropdown">
+              <span>{{ selectedStallLabel }}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 512 512" class="arrow">
+                <path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"></path>
+              </svg>
+            </div>
+            <div v-show="isOpenStall" class="options">
+              <label
+                v-for="opt in stallOptions"
+                :key="opt.value"
+                class="option-item"
+                :class="{ active: settings.stallReminderDays === opt.value }"
+                @click="selectStallOption(opt.value)"
+              >
+                {{ opt.label }}
+              </label>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="modal-actions">
         <button type="button" class="secondary-btn" @click="emit('close')">Cancel</button>
-        <button type="button" class="primary-btn" @click="saveSettings">Save</button>
+        <button type="button" class="primary-btn" :disabled="isSaving" @click="handleSave">
+          {{ isSaving ? 'Saving...' : 'Save' }}
+        </button>
       </div>
     </div>
   </div>
@@ -120,7 +204,7 @@ const saveSettings = async () => {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem 1.4rem;
-  width: 320px;
+  width: 340px;
   color: var(--text-primary);
   box-shadow: 0 8px 24px var(--shadow);
 }
@@ -155,8 +239,13 @@ const saveSettings = async () => {
   color: var(--text-primary);
 }
 
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
 .form-group {
-  margin-bottom: 1.1rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -186,21 +275,12 @@ const saveSettings = async () => {
   cursor: pointer;
 }
 
-/* Custom Select Dropdown */
+/* Custom Dropdown Styling */
 .select {
-  cursor: pointer;
   position: relative;
   color: var(--text-primary);
   width: 100%;
-}
-
-.select::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  height: 6px;
+  user-select: none;
 }
 
 .selected {
@@ -213,7 +293,13 @@ const saveSettings = async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  cursor: pointer;
   transition: border-color 0.2s ease;
+}
+
+.select.is-open .selected,
+.selected:hover {
+  border-color: var(--accent);
 }
 
 .arrow {
@@ -222,6 +308,10 @@ const saveSettings = async () => {
   transform: rotate(-90deg);
   fill: var(--text-primary);
   transition: transform 200ms ease;
+}
+
+.select.is-open .arrow {
+  transform: rotate(0deg);
 }
 
 .options {
@@ -236,49 +326,20 @@ const saveSettings = async () => {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 150ms ease, transform 150ms ease;
-  transform: translateY(-2px);
   z-index: 100;
-  max-height: 200px;
+  max-height: 180px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
 
-/* Custom Scrollbar Styling */
 .options::-webkit-scrollbar {
   width: 6px;
-}
-
-.options::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 .options::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 4px;
-}
-
-.options::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
-}
-
-.select:hover > .options {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.select:hover > .selected {
-  border-color: var(--accent);
-}
-
-.select:hover > .selected .arrow {
-  transform: rotate(0deg);
 }
 
 .option-item {
@@ -328,6 +389,11 @@ const saveSettings = async () => {
 .primary-btn:hover {
   background-color: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .secondary-btn {

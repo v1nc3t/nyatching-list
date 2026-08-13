@@ -1,5 +1,11 @@
 export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
 
+export interface AppSettings {
+  newSeasonCheckIntervalHours: number // Existing setting
+  stallReminderDays: number           // 0 = Off, 3, 7, 14, 30 days
+  enableSystemNotifications: boolean
+}
+
 export interface BaseMedia {
   id: string;
   title: string;
@@ -8,7 +14,10 @@ export interface BaseMedia {
   watchingUrl: string;
   posterPath?: string;
   tmdbId?: number;
+  createdAt: number;
   updatedAt: number;
+  lastProgressUpdate: number      // Updated whenever episode or minutes change
+  lastStallNotified?: number      // Prevents repeated notification spam
 }
 
 export interface Show extends BaseMedia {
