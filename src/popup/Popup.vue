@@ -40,10 +40,11 @@ const selectedTmdbId = ref<number | undefined>(undefined)
 // TMDB Auto-complete State
 const suggestions = ref<TMDBSuggestion[]>([])
 const showSuggestions = ref(false)
+const isSelectingSuggestion = ref(false) // Flag to suppress watcher re-triggering
 let debounceTimer: ReturnType<typeof setTimeout>
 
 // Watch Total Seasons to Reset Current Season to 1
-watch(formTotalSeasons, (newTotal) => {
+watch(formTotalSeasons, () => {
   formSeason.value = 1
 })
 
@@ -62,9 +63,15 @@ watch(formSeason, (newSeason) => {
 
 // Watch Title Input for Live Suggestions
 watch(formTitle, (newVal) => {
+  // If title was modified programmatically via selection, skip searching again
+  if (isSelectingSuggestion.value) {
+    isSelectingSuggestion.value = false
+    return
+  }
+
   clearTimeout(debounceTimer)
 
-  if (!newVal || newVal.length < 2) {
+  if (!newVal || newVal.trim().length < 2) {
     suggestions.value = []
     showSuggestions.value = false
     return
@@ -77,7 +84,11 @@ watch(formTitle, (newVal) => {
 })
 
 const selectSuggestion = async (item: TMDBSuggestion) => {
+  isSelectingSuggestion.value = true // Suppress watcher execution
   showSuggestions.value = false
+  suggestions.value = []
+  clearTimeout(debounceTimer)
+
   formTitle.value = item.title
   formType.value = item.mediaType
   selectedPosterPath.value = item.posterPath
@@ -96,6 +107,13 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
       formRuntimeMinutes.value = details.runtime ? details.runtime.toString() : ''
     }
   }
+}
+
+// Close dropdown smoothly when focus moves away
+const handleBlur = () => {
+  setTimeout(() => {
+    showSuggestions.value = false
+  }, 200)
 }
 
 // Load Data
@@ -126,6 +144,7 @@ const closeModal = () => {
   selectedTmdbId.value = undefined
   suggestions.value = []
   showSuggestions.value = false
+  isSelectingSuggestion.value = false
   errorMessage.value = ''
 }
 
