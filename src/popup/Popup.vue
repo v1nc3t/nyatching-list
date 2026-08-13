@@ -42,6 +42,24 @@ const suggestions = ref<TMDBSuggestion[]>([])
 const showSuggestions = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout>
 
+// Watch Total Seasons to Reset Current Season to 1
+watch(formTotalSeasons, (newTotal) => {
+  formSeason.value = 1
+})
+
+// Guard Season from Exceeding Total Seasons
+watch(formSeason, (newSeason) => {
+  const total = Number(formTotalSeasons.value)
+  if (formTotalSeasons.value !== '' && !isNaN(total) && total > 0) {
+    if (newSeason > total) {
+      formSeason.value = total
+    }
+  }
+  if (newSeason < 1) {
+    formSeason.value = 1
+  }
+})
+
 // Watch Title Input for Live Suggestions
 watch(formTitle, (newVal) => {
   clearTimeout(debounceTimer)
@@ -369,7 +387,13 @@ const handleAddMediaSubmit = async () => {
             <div class="form-row">
               <div class="form-group">
                 <label for="season-input">Season</label>
-                <input id="season-input" v-model.number="formSeason" type="number" min="1" />
+                <input
+                  id="season-input"
+                  v-model.number="formSeason"
+                  type="number"
+                  min="1"
+                  :max="formTotalSeasons ? Number(formTotalSeasons) : undefined"
+                />
               </div>
               <div class="form-group">
                 <label for="episode-input">Episode</label>
