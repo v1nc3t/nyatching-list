@@ -23,6 +23,7 @@ const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'drop
 
 // Centralized interval options for UI and background sync
 export const TIME_INTERVAL_OPTIONS = [
+  { label: 'Never', hours: -1, days: -1 },
   { label: '1 Day', hours: 24, days: 1 },
   { label: '2 Days', hours: 48, days: 2 },
   { label: '1 Week', hours: 168, days: 7 },
@@ -31,13 +32,12 @@ export const TIME_INTERVAL_OPTIONS = [
   { label: '2 Months', hours: 1440, days: 60 },
   { label: '6 Months', hours: 4320, days: 180 },
   { label: '1 Year', hours: 8760, days: 365 },
-] as const;
+] as const
 
 export const DEFAULT_SETTINGS: AppSettings = {
   newSeasonCheckIntervalHours: 24, // Default: 1 Day
-  stallReminderDays: 7,             // Default: 1 Week
-  enableSystemNotifications: true,
-};
+  stallReminderDays: 7, // Default: 1 Week
+}
 
 // ==========================================
 // UTILITY & LOW-LEVEL STORAGE OPERATIONS

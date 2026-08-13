@@ -3,7 +3,7 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
   ;(self as any).__LIVE_RELOAD__ = true
 }
 
-import { getAllMedia, updateMedia, addNotificationLog } from '../storage'
+import { getAllMedia, updateMedia, addNotificationLog, getSettings } from '../storage'
 import { getTMDBDetails } from '../services/tmdb'
 import { isShow, Show, TrackedMedia } from '../types'
 
@@ -13,51 +13,35 @@ import { isShow, Show, TrackedMedia } from '../types'
 
 const ALARM_NAME = 'nyatching_daily_check'
 
-export interface NotificationSettings {
-  enabled: boolean
-  intervalMinutes: number // Default 1440 (24h)
-}
-
 export interface SystemMessage {
-  action: 'TRIGGER_CHECK' | 'UPDATE_SETTINGS'
-  payload?: Partial<NotificationSettings>
-}
-
-const DEFAULT_SETTINGS: NotificationSettings = {
-  enabled: true,
-  intervalMinutes: 1440
+  type?: 'SETTINGS_UPDATED' | 'TRIGGER_CHECK'
+  action?: 'TRIGGER_CHECK' | 'UPDATE_SETTINGS'
 }
 
 // ==========================================
-// SETTINGS & ALARM MANAGEMENT
+// ALARM MANAGEMENT
 // ==========================================
-
-export const getNotificationSettings = async (): Promise<NotificationSettings> => {
-  try {
-    const result = await chrome.storage.local.get('notification_settings')
-    return result.notification_settings || DEFAULT_SETTINGS
-  } catch (error) {
-    console.error('[Nyatching Storage] Failed to load settings:', error)
-    return DEFAULT_SETTINGS
-  }
-}
-
-export const saveNotificationSettings = async (settings: NotificationSettings): Promise<void> => {
-  await chrome.storage.local.set({ notification_settings: settings })
-  await setupAlarm()
-}
 
 export const setupAlarm = async (): Promise<void> => {
   await chrome.alarms.clear(ALARM_NAME)
-  const settings = await getNotificationSettings()
+  const settings = await getSettings()
 
-  if (settings.enabled) {
-    const period = Math.max(1, settings.intervalMinutes)
-    chrome.alarms.create(ALARM_NAME, {
-      delayInMinutes: period,
-      periodInMinutes: period
-    })
+  const intervalHours = settings.newSeasonCheckIntervalHours ?? 24
+
+  // -1 or <= 0 indicates "Never" / Disabled
+  if (intervalHours <= 0) {
+    console.log('[Nyatching Background] Episode checks disabled (Never).')
+    return
   }
+
+  const periodInMinutes = Math.max(1, intervalHours * 60)
+
+  chrome.alarms.create(ALARM_NAME, {
+    delayInMinutes: periodInMinutes,
+    periodInMinutes: periodInMinutes
+  })
+
+  console.log(`[Nyatching Background] Alarm scheduled for every ${intervalHours} hours.`)
 }
 
 // ==========================================
@@ -99,7 +83,7 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
 
       const notificationId = `nyatching_show_${show.id}_${latestSeasons}_${Date.now()}`
 
-      // Dispatch desktop notification (no buttons)
+      // Desktop Notification
       chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: icon,
@@ -108,7 +92,7 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
         priority: 2
       })
 
-      // Persist entry into dashboard notification log
+      // Dashboard Log Entry
       await addNotificationLog({
         showId: show.id,
         title: `New Season: ${show.title}`,
@@ -116,7 +100,7 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
         posterPath: show.posterPath
       })
 
-      // Update season count in local media storage
+      // Update Local State
       await updateMedia({
         id: show.id,
         totalSeasons: latestSeasons,
@@ -133,8 +117,10 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
 }
 
 export const checkWaitingShows = async (): Promise<void> => {
-  const settings = await getNotificationSettings()
-  if (!settings.enabled) return
+  const settings = await getSettings()
+  
+  // Guard check: skip if interval set to Never (-1)
+  if (settings.newSeasonCheckIntervalHours <= 0) return
 
   try {
     const allMedia: TrackedMedia[] = await getAllMedia()
@@ -155,12 +141,9 @@ if (typeof self !== 'undefined') {
 }
 
 // ==========================================
-// NOTIFICATION ACTION LISTENERS
+// NOTIFICATION LISTENERS
 // ==========================================
 
-/**
- * Handles clicks anywhere on the notification body.
- */
 chrome.notifications.onClicked.addListener(async (notificationId) => {
   if (notificationId.startsWith('nyatching_show_')) {
     const dashboardUrl = chrome.runtime.getURL('src/dashboard/dashboard.html')
@@ -194,17 +177,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 })
 
+// Handles messages dispatched from Settings Modal or Popup UI
 chrome.runtime.onMessage.addListener((message: SystemMessage, _sender, sendResponse) => {
-  if (message.action === 'TRIGGER_CHECK') {
-    checkWaitingShows()
+  if (message.type === 'SETTINGS_UPDATED' || message.action === 'UPDATE_SETTINGS') {
+    setupAlarm()
       .then(() => sendResponse({ status: 'success' }))
       .catch((err) => sendResponse({ status: 'error', error: String(err) }))
     return true
   }
 
-  if (message.action === 'UPDATE_SETTINGS' && message.payload) {
-    getNotificationSettings()
-      .then((current) => saveNotificationSettings({ ...current, ...message.payload }))
+  if (message.action === 'TRIGGER_CHECK') {
+    checkWaitingShows()
       .then(() => sendResponse({ status: 'success' }))
       .catch((err) => sendResponse({ status: 'error', error: String(err) }))
     return true

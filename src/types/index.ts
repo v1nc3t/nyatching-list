@@ -1,9 +1,9 @@
 export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
 
 export interface AppSettings {
-  newSeasonCheckIntervalHours: number // Existing setting
-  stallReminderDays: number           // 0 = Off, 3, 7, 14, 30 days
-  enableSystemNotifications: boolean
+  newSeasonCheckIntervalHours: number // -1 means Never
+  stallReminderDays: number // -1 means Never
+  enableSystemNotifications?: boolean // Optional / Deprecated
 }
 
 export interface BaseMedia {

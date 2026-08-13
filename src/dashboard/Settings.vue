@@ -16,11 +16,11 @@ const isOpenStall = ref(false)
 const settings = ref<AppSettings>({
   newSeasonCheckIntervalHours: 24,
   stallReminderDays: 7,
-  enableSystemNotifications: true,
 })
 
-// Episode Check Interval Options (Value in Hours)
+// Episode Check Interval Options (Value in Hours; -1 = Disabled)
 const seasonOptions = [
+  { label: 'Never', value: -1 },
   { label: '1 Day', value: 24 },
   { label: '2 Days', value: 48 },
   { label: '1 Week', value: 168 },
@@ -31,8 +31,9 @@ const seasonOptions = [
   { label: '1 Year', value: 8760 },
 ]
 
-// Inactivity Reminder Options (Value in Days)
+// Inactivity Reminder Options (Value in Days; -1 = Disabled)
 const stallOptions = [
+  { label: 'Never', value: -1 },
   { label: '1 Day', value: 1 },
   { label: '2 Days', value: 2 },
   { label: '1 Week', value: 7 },
@@ -120,14 +121,6 @@ const handleSave = async () => {
       </div>
 
       <div class="modal-body">
-        <!-- Desktop Notifications Toggle -->
-        <div class="form-group">
-          <label class="toggle-label">
-            <span>Desktop System Notifications</span>
-            <input type="checkbox" v-model="settings.enableSystemNotifications" class="toggle-checkbox" />
-          </label>
-        </div>
-
         <!-- New Season/Episode Check Frequency -->
         <div class="form-group">
           <label>New Episode Check Frequency</label>
@@ -257,22 +250,6 @@ const handleSave = async () => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.toggle-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.92rem;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.toggle-checkbox {
-  width: 1.15rem;
-  height: 1.15rem;
-  accent-color: var(--accent);
-  cursor: pointer;
 }
 
 /* Custom Dropdown Styling */
