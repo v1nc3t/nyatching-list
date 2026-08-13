@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
 import { useTheme } from '../utils/theme'
+import { searchTMDB, getTMDBDetails, TMDBSuggestion } from '../services/tmdb'
 
 // Theme (Shared via chrome.storage.local)
 const { theme, toggleTheme } = useTheme()
@@ -33,6 +34,51 @@ const formMinutes = ref(0)
 const formRuntimeMinutes = ref('')
 const formTotalSeasons = ref('')
 const formReleaseYear = ref('')
+const selectedPosterPath = ref<string | undefined>(undefined)
+const selectedTmdbId = ref<number | undefined>(undefined)
+
+// TMDB Auto-complete State
+const suggestions = ref<TMDBSuggestion[]>([])
+const showSuggestions = ref(false)
+let debounceTimer: ReturnType<typeof setTimeout>
+
+// Watch Title Input for Live Suggestions
+watch(formTitle, (newVal) => {
+  clearTimeout(debounceTimer)
+
+  if (!newVal || newVal.length < 2) {
+    suggestions.value = []
+    showSuggestions.value = false
+    return
+  }
+
+  debounceTimer = setTimeout(async () => {
+    suggestions.value = await searchTMDB(newVal)
+    showSuggestions.value = suggestions.value.length > 0
+  }, 300)
+})
+
+const selectSuggestion = async (item: TMDBSuggestion) => {
+  showSuggestions.value = false
+  formTitle.value = item.title
+  formType.value = item.mediaType
+  selectedPosterPath.value = item.posterPath
+  selectedTmdbId.value = item.id
+
+  if (item.year) {
+    formReleaseYear.value = item.year.toString()
+  }
+
+  // Fetch deeper metadata (seasons / runtime)
+  const details = await getTMDBDetails(item.id, item.mediaType)
+  if (details) {
+    if (item.mediaType === 'show') {
+      formTotalSeasons.value = details.number_of_seasons ? details.number_of_seasons.toString() : ''
+    } else {
+      formRuntimeMinutes.value = details.runtime ? details.runtime.toString() : ''
+    }
+  }
+}
 
 // Load Data
 const refreshCount = async () => {
@@ -58,6 +104,10 @@ const closeModal = () => {
   formRuntimeMinutes.value = ''
   formTotalSeasons.value = ''
   formReleaseYear.value = ''
+  selectedPosterPath.value = undefined
+  selectedTmdbId.value = undefined
+  suggestions.value = []
+  showSuggestions.value = false
   errorMessage.value = ''
 }
 
@@ -88,6 +138,8 @@ const handleAddMediaSubmit = async () => {
       watchingUrl: formUrl.value,
       currentSeason: formSeason.value,
       currentEpisode: formEpisode.value,
+      posterPath: selectedPosterPath.value,
+      tmdbId: selectedTmdbId.value,
       ...(formTotalSeasons.value !== '' && !isNaN(totalSeasonsNum)
         ? { totalSeasons: totalSeasonsNum }
         : {})
@@ -102,6 +154,8 @@ const handleAddMediaSubmit = async () => {
       status: formStatus.value,
       watchingUrl: formUrl.value,
       currentMinutes: formMinutes.value,
+      posterPath: selectedPosterPath.value,
+      tmdbId: selectedTmdbId.value,
       ...(formRuntimeMinutes.value !== '' && !isNaN(runtimeMinutesNum)
         ? { runtimeMinutes: runtimeMinutesNum }
         : {}),
@@ -214,6 +268,46 @@ const handleAddMediaSubmit = async () => {
       <div v-if="errorMessage" class="error-banner">{{ errorMessage }}</div>
 
       <form @submit.prevent="handleAddMediaSubmit">
+        <!-- Title Input with Auto-complete -->
+        <div class="form-group autocomplete-group">
+          <label for="title-input">Title *</label>
+          <input
+            id="title-input"
+            v-model="formTitle"
+            type="text"
+            placeholder="e.g. Breaking Bad"
+            autocomplete="off"
+            required
+            @focus="showSuggestions = suggestions.length > 0"
+          />
+
+          <!-- Auto-complete Suggestions Dropdown -->
+          <div v-if="showSuggestions" class="suggestions-dropdown">
+            <div
+              v-for="item in suggestions"
+              :key="item.id"
+              class="suggestion-item"
+              @click="selectSuggestion(item)"
+            >
+              <img
+                v-if="item.posterPath"
+                :src="item.posterPath"
+                class="suggestion-poster"
+                alt="poster"
+              />
+              <div v-else class="suggestion-poster-placeholder"></div>
+
+              <div class="suggestion-info">
+                <span class="suggestion-title">{{ item.title }}</span>
+                <span class="suggestion-meta">
+                  <span class="badge" :class="item.mediaType">{{ item.mediaType }}</span>
+                  <span v-if="item.year" class="year">{{ item.year }}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label id="type-label">Type</label>
           <div class="segmented" role="group" aria-labelledby="type-label">
@@ -226,17 +320,6 @@ const handleAddMediaSubmit = async () => {
               <span>Movie</span>
             </label>
           </div>
-        </div>
-
-        <div class="form-group">
-          <label for="title-input">Title *</label>
-          <input
-            id="title-input"
-            v-model="formTitle"
-            type="text"
-            placeholder="e.g. Breaking Bad"
-            required
-          />
         </div>
 
         <div class="form-group">
@@ -370,6 +453,9 @@ const handleAddMediaSubmit = async () => {
   --error-bg: #4a151b;
   --error-text: #ff8a80;
   --shadow: rgba(0, 0, 0, 0.65);
+
+  --show-text: #38bdf8;
+  --movie-text: #f472b6;
   color-scheme: dark;
 }
 
@@ -388,6 +474,9 @@ const handleAddMediaSubmit = async () => {
   --error-bg: #fbe7e6;
   --error-text: #c0392b;
   --shadow: rgba(0, 0, 0, 0.05);
+
+  --show-text: #0284c7;
+  --movie-text: #db2777;
   color-scheme: light;
 }
 
@@ -497,7 +586,7 @@ p {
   color: var(--accent);
 }
 
-/* ---------- Summary view ---------- */
+/* ---------- Summary View ---------- */
 .count-card {
   display: flex;
   align-items: center;
@@ -567,7 +656,7 @@ p {
   background-color: var(--bg-input);
 }
 
-/* ---------- Add-media view ---------- */
+/* ---------- Add-media View ---------- */
 .add-panel {
   width: 100%;
   text-align: left;
@@ -638,6 +727,107 @@ p {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* Title Auto-Complete Styling */
+.autocomplete-group {
+  position: relative;
+  z-index: 60;
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px var(--shadow);
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 0.2rem;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.12s ease;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover {
+  background-color: var(--bg-input);
+}
+
+.suggestion-poster {
+  width: 24px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.suggestion-poster-placeholder {
+  width: 24px;
+  height: 36px;
+  background: var(--bg-input);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.suggestion-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+  min-width: 0;
+}
+
+.suggestion-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestion-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.suggestion-meta .badge {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  font-weight: 800;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+.suggestion-meta .badge.show {
+  color: var(--show-text);
+}
+
+.suggestion-meta .badge.movie {
+  color: var(--movie-text);
+}
+
+.suggestion-meta .year {
+  font-size: 0.65rem;
+  color: var(--text-muted);
 }
 
 /* Custom Interactive Select */
