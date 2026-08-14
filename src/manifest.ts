@@ -1,6 +1,8 @@
 import { defineManifest } from '@crxjs/vite-plugin'
 import packageData from '../package.json' with { type: 'json' }
 
+const isFirefox = process.env.TARGET_BROWSER === 'firefox'
+
 export default defineManifest({
   name: packageData.name,
   description: packageData.description,
@@ -16,10 +18,16 @@ export default defineManifest({
     default_popup: 'src/popup/popup.html',
     default_icon: 'img/logo-48.png',
   },
-  background: {
-    service_worker: 'src/background/background.ts',
-    type: 'module',
-  },
+  // Firefox MV3 requires background.scripts instead of background.service_worker
+  background: isFirefox
+    ? {
+        scripts: ['src/background/background.ts'],
+        type: 'module',
+      }
+    : {
+        service_worker: 'src/background/background.ts',
+        type: 'module',
+      },
   web_accessible_resources: [
     {
       resources: ['img/logo-16.png', 'img/logo-32.png', 'img/logo-48.png', 'img/logo-128.png'],
@@ -30,6 +38,15 @@ export default defineManifest({
   permissions: ['storage', 'alarms', 'notifications'],
   host_permissions: [
     'https://api.themoviedb.org/3/*',
-    "https://www.imdb.com/*"
+    'https://www.imdb.com/*',
   ],
+  // Firefox MV3 requirements for webextension IDs during development/submission
+  ...(isFirefox && {
+    browser_specific_settings: {
+      gecko: {
+        id: 'nyatching-list@example.com', // Replace with your actual extension ID or email-style ID
+        strict_min_version: '109.0',
+      },
+    },
+  }),
 })
