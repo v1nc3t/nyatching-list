@@ -3,6 +3,7 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
   ;(self as any).__LIVE_RELOAD__ = true
 }
 
+import browser from 'webextension-polyfill'
 import { getAllMedia, updateMedia, addNotificationLog, getSettings } from '../storage'
 import { getTMDBDetails } from '../services/tmdb'
 import { isShow, Show, TrackedMedia } from '../types'
@@ -23,7 +24,7 @@ export interface SystemMessage {
 // ==========================================
 
 export const setupAlarm = async (): Promise<void> => {
-  await chrome.alarms.clear(ALARM_NAME)
+  await browser.alarms.clear(ALARM_NAME)
   const settings = await getSettings()
 
   const intervalHours = settings.newSeasonCheckIntervalHours ?? 24
@@ -36,7 +37,7 @@ export const setupAlarm = async (): Promise<void> => {
 
   const periodInMinutes = Math.max(1, intervalHours * 60)
 
-  chrome.alarms.create(ALARM_NAME, {
+  browser.alarms.create(ALARM_NAME, {
     delayInMinutes: periodInMinutes,
     periodInMinutes: periodInMinutes
   })
@@ -84,7 +85,7 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
       const notificationId = `nyatching_show_${show.id}_${latestSeasons}_${Date.now()}`
 
       // Desktop Notification
-      chrome.notifications.create(notificationId, {
+      await browser.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: icon,
         title: `New Season: ${show.title}`,
@@ -119,7 +120,6 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
 export const checkWaitingShows = async (): Promise<void> => {
   const settings = await getSettings()
   
-  // Guard check: skip if interval set to Never (-1)
   if (settings.newSeasonCheckIntervalHours <= 0) return
 
   try {
@@ -144,18 +144,18 @@ if (typeof self !== 'undefined') {
 // NOTIFICATION LISTENERS
 // ==========================================
 
-chrome.notifications.onClicked.addListener(async (notificationId) => {
+browser.notifications.onClicked.addListener(async (notificationId) => {
   if (notificationId.startsWith('nyatching_show_')) {
-    const dashboardUrl = chrome.runtime.getURL('src/dashboard/dashboard.html')
-    const tabs = await chrome.tabs.query({ url: dashboardUrl })
+    const dashboardUrl = browser.runtime.getURL('src/dashboard/dashboard.html')
+    const tabs = await browser.tabs.query({ url: dashboardUrl })
 
     if (tabs.length > 0 && tabs[0].id) {
-      await chrome.tabs.update(tabs[0].id, { active: true })
+      await browser.tabs.update(tabs[0].id, { active: true })
     } else {
-      await chrome.tabs.create({ url: dashboardUrl })
+      await browser.tabs.create({ url: dashboardUrl })
     }
 
-    chrome.notifications.clear(notificationId)
+    await browser.notifications.clear(notificationId)
   }
 })
 
@@ -163,33 +163,31 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
 // SERVICE WORKER LIFECYCLE LISTENERS
 // ==========================================
 
-chrome.runtime.onInstalled.addListener(async () => {
+browser.runtime.onInstalled.addListener(async () => {
   await setupAlarm()
 })
 
-chrome.runtime.onStartup.addListener(async () => {
+browser.runtime.onStartup.addListener(async () => {
   await setupAlarm()
 })
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+browser.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) {
     checkWaitingShows()
   }
 })
 
-// Handles messages dispatched from Settings Modal or Popup UI
-chrome.runtime.onMessage.addListener((message: SystemMessage, _sender, sendResponse) => {
-  if (message.type === 'SETTINGS_UPDATED' || message.action === 'UPDATE_SETTINGS') {
-    setupAlarm()
-      .then(() => sendResponse({ status: 'success' }))
-      .catch((err) => sendResponse({ status: 'error', error: String(err) }))
-    return true
+// Handles messages from Settings Modal or Popup UI
+browser.runtime.onMessage.addListener(async (message: unknown) => {
+  const msg = message as SystemMessage
+
+  if (msg.type === 'SETTINGS_UPDATED' || msg.action === 'UPDATE_SETTINGS') {
+    await setupAlarm()
+    return { status: 'success' }
   }
 
-  if (message.action === 'TRIGGER_CHECK') {
-    checkWaitingShows()
-      .then(() => sendResponse({ status: 'success' }))
-      .catch((err) => sendResponse({ status: 'error', error: String(err) }))
-    return true
+  if (msg.action === 'TRIGGER_CHECK') {
+    await checkWaitingShows()
+    return { status: 'success' }
   }
 })

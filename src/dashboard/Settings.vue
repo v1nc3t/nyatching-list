@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue'
+import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings, saveSettings } from '../storage'
 
@@ -99,9 +100,11 @@ const handleSave = async () => {
   try {
     await saveSettings(settings.value)
 
-    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings: settings.value })
-    }
+    // Polyfilled cross-browser message dispatch to background listener
+    await browser.runtime.sendMessage({
+      type: 'SETTINGS_UPDATED',
+      settings: settings.value,
+    })
 
     emit('close')
   } catch (error) {
@@ -252,7 +255,6 @@ const handleSave = async () => {
   letter-spacing: 0.04em;
 }
 
-/* Custom Dropdown Styling */
 .select {
   position: relative;
   color: var(--text-primary);
