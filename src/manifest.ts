@@ -34,7 +34,11 @@ export default defineManifest({
       matches: ['https://www.imdb.com/*'],
     },
   ],
-  options_page: 'src/dashboard/dashboard.html',
+  // options_ui works across Chrome + Firefox; options_page alone needs Firefox 126+
+  options_ui: {
+    page: 'src/dashboard/dashboard.html',
+    open_in_tab: true,
+  },
   permissions: ['storage', 'alarms', 'notifications'],
   host_permissions: [
     'https://api.themoviedb.org/3/*',
@@ -45,7 +49,8 @@ export default defineManifest({
     browser_specific_settings: {
       gecko: {
         id: 'nyatching-list@example.com', // Replace with your actual extension ID or email-style ID
-        strict_min_version: '109.0',
+        // 112+ required for background.type: "module"
+        strict_min_version: '112.0',
       },
     },
   }),
