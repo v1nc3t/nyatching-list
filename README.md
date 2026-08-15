@@ -95,8 +95,9 @@ npm run dev:firefox  # Firefox
 ```
 
 ```bash
-npm run build
-npm run build:firefox
+npm run build          # Chrome + Firefox
+npm run build:chrome   # → build/
+npm run build:firefox  # → build-firefox/
 ```
 
 Load the unpacked extension from the `build` or `build-firefox` folder while developing.

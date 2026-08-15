@@ -19,7 +19,8 @@
   "scripts": {
     "dev": "vite",
     "dev:firefox": "TARGET_BROWSER=firefox vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "npm run build:chrome && npm run build:firefox",
+    "build:chrome": "vue-tsc --noEmit && vite build",
     "build:firefox": "vue-tsc --noEmit && TARGET_BROWSER=firefox vite build",
     "preview": "vite preview",
     "fmt": "prettier --write '**/*.{vue,ts,json,css,scss,md}'",
