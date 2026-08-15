@@ -16,7 +16,7 @@ export default defineManifest({
   },
   action: {
     default_popup: 'src/popup/popup.html',
-    default_icon: 'img/logo-48.png',
+    default_icon: 'img/logo.png',
   },
   // Firefox MV3 requires background.scripts instead of background.service_worker
   background: isFirefox
