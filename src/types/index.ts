@@ -18,6 +18,8 @@ export interface BaseMedia {
   updatedAt: number;
   lastProgressUpdate: number      // Updated whenever episode or minutes change
   lastStallNotified?: number      // Prevents repeated notification spam
+  /** When true, remind if progress (episodes/minutes) is not updated */
+  notifyEnabled?: boolean;
 }
 
 export interface Show extends BaseMedia {
@@ -25,6 +27,7 @@ export interface Show extends BaseMedia {
   currentSeason: number;
   currentEpisode: number;
   totalSeasons?: number;
+  /** When true, background checks TMDB for new seasons */
   tracked?: boolean;
 }
 

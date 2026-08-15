@@ -6,13 +6,14 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
 import browser from 'webextension-polyfill'
 import { getAllMedia, updateMedia, addNotificationLog, getSettings } from '../storage'
 import { getTMDBDetails } from '../services/tmdb'
-import { isShow, Show, TrackedMedia } from '../types'
+import { isShow, MediaStatus, Show, TrackedMedia } from '../types'
 
 // ==========================================
 // CONSTANTS & TYPES
 // ==========================================
 
 const ALARM_NAME = 'nyatching_daily_check'
+const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 export interface SystemMessage {
   type?: 'SETTINGS_UPDATED' | 'TRIGGER_CHECK'
@@ -23,26 +24,48 @@ export interface SystemMessage {
 // ALARM MANAGEMENT
 // ==========================================
 
+const isTrackableStatus = (status: MediaStatus) => status === 'watching' || status === 'waiting'
+
+/** Pick how often the alarm should fire based on enabled check intervals. */
+const resolveAlarmPeriodMinutes = (
+  seasonIntervalHours: number,
+  stallReminderDays: number
+): number | null => {
+  const candidates: number[] = []
+
+  if (seasonIntervalHours > 0) {
+    candidates.push(seasonIntervalHours * 60)
+  }
+
+  // Stall threshold is in days; poll at least daily while reminders are on
+  if (stallReminderDays > 0) {
+    candidates.push(24 * 60)
+  }
+
+  if (candidates.length === 0) return null
+  return Math.max(1, Math.min(...candidates))
+}
+
 export const setupAlarm = async (): Promise<void> => {
   await browser.alarms.clear(ALARM_NAME)
   const settings = await getSettings()
 
-  const intervalHours = settings.newSeasonCheckIntervalHours ?? 24
+  const periodInMinutes = resolveAlarmPeriodMinutes(
+    settings.newSeasonCheckIntervalHours ?? 24,
+    settings.stallReminderDays ?? 7
+  )
 
-  // -1 or <= 0 indicates "Never" / Disabled
-  if (intervalHours <= 0) {
-    console.log('[Nyatching Background] Episode checks disabled (Never).')
+  if (periodInMinutes === null) {
+    console.log('[Nyatching Background] All checks disabled (Never).')
     return
   }
 
-  const periodInMinutes = Math.max(1, intervalHours * 60)
-
   browser.alarms.create(ALARM_NAME, {
     delayInMinutes: periodInMinutes,
-    periodInMinutes: periodInMinutes
+    periodInMinutes,
   })
 
-  console.log(`[Nyatching Background] Alarm scheduled for every ${intervalHours} hours.`)
+  console.log(`[Nyatching Background] Alarm scheduled every ${periodInMinutes} minutes.`)
 }
 
 // ==========================================
@@ -52,16 +75,25 @@ export const setupAlarm = async (): Promise<void> => {
 const isTrackedShow = (media: TrackedMedia): media is Show => {
   if (!isShow(media)) return false
   if (!media.tmdbId) return false
+  if (!isTrackableStatus(media.status)) return false
+  // Opt-in via Track button; legacy undefined counts as off
+  return media.tracked === true
+}
 
-  if (typeof media.tracked === 'boolean') {
-    return media.tracked
+const isNotifyEnabled = (media: TrackedMedia): boolean => {
+  if (media.status !== 'watching') return false
+  return media.notifyEnabled === true
+}
+
+const getPosterIcon = (media: TrackedMedia): string => {
+  if (media.posterPath && media.posterPath.startsWith('http')) {
+    return media.posterPath
   }
-
-  return media.status === 'waiting'
+  return browser.runtime.getURL('img/logo-128.png')
 }
 
 // ==========================================
-// POLLING LOGIC
+// NEW SEASON POLLING
 // ==========================================
 
 const processShowUpdate = async (show: Show): Promise<boolean> => {
@@ -78,33 +110,26 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
     const lastKnown: number = show.totalSeasons || 0
 
     if (latestSeasons > lastKnown) {
-      const icon = show.posterPath && show.posterPath.startsWith('http')
-        ? show.posterPath
-        : browser.runtime.getURL('img/logo-128.png')
-
       const notificationId = `nyatching_show_${show.id}_${latestSeasons}_${Date.now()}`
 
-      // Desktop Notification
       await browser.notifications.create(notificationId, {
         type: 'basic',
-        iconUrl: icon,
+        iconUrl: getPosterIcon(show),
         title: `New Season: ${show.title}`,
         message: `Season ${latestSeasons} is available! Click to open dashboard.`,
       })
 
-      // Dashboard Log Entry
       await addNotificationLog({
         showId: show.id,
         title: `New Season: ${show.title}`,
         message: `Season ${latestSeasons} has been released!`,
-        posterPath: show.posterPath
+        posterPath: show.posterPath,
       })
 
-      // Update Local State
       await updateMedia({
         id: show.id,
         totalSeasons: latestSeasons,
-        status: 'waiting'
+        status: 'waiting',
       })
 
       return true
@@ -118,7 +143,7 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
 
 export const checkWaitingShows = async (): Promise<void> => {
   const settings = await getSettings()
-  
+
   if (settings.newSeasonCheckIntervalHours <= 0) return
 
   try {
@@ -135,8 +160,81 @@ export const checkWaitingShows = async (): Promise<void> => {
   }
 }
 
+// ==========================================
+// INACTIVITY (STALL) REMINDERS
+// ==========================================
+
+const processStallReminder = async (
+  media: TrackedMedia,
+  stallReminderDays: number
+): Promise<boolean> => {
+  const now = Date.now()
+  const lastProgress = media.lastProgressUpdate || media.createdAt || now
+  const idleMs = now - lastProgress
+  const thresholdMs = stallReminderDays * MS_PER_DAY
+
+  if (idleMs < thresholdMs) return false
+
+  // Avoid spam: wait another full threshold since the last stall notification
+  if (media.lastStallNotified && now - media.lastStallNotified < thresholdMs) {
+    return false
+  }
+
+  const progressHint = isShow(media)
+    ? `No episode updates for ${stallReminderDays}+ day(s).`
+    : `No minute updates for ${stallReminderDays}+ day(s).`
+
+  const notificationId = `nyatching_stall_${media.id}_${Date.now()}`
+
+  await browser.notifications.create(notificationId, {
+    type: 'basic',
+    iconUrl: getPosterIcon(media),
+    title: `Still watching ${media.title}?`,
+    message: `${progressHint} Click to open dashboard.`,
+  })
+
+  await addNotificationLog({
+    showId: media.id,
+    title: `Inactive: ${media.title}`,
+    message: progressHint,
+    posterPath: media.posterPath,
+  })
+
+  await updateMedia({
+    id: media.id,
+    lastStallNotified: now,
+  })
+
+  return true
+}
+
+export const checkStalledMedia = async (): Promise<void> => {
+  const settings = await getSettings()
+  const stallReminderDays = settings.stallReminderDays ?? 7
+
+  if (stallReminderDays <= 0) return
+
+  try {
+    const allMedia = await getAllMedia()
+    const candidates = allMedia.filter(isNotifyEnabled)
+
+    for (const media of candidates) {
+      await processStallReminder(media, stallReminderDays)
+    }
+  } catch (error) {
+    console.error('[Nyatching Background] Critical error during stall checks:', error)
+  }
+}
+
+export const runScheduledChecks = async (): Promise<void> => {
+  await checkWaitingShows()
+  await checkStalledMedia()
+}
+
 if (typeof self !== 'undefined') {
   ;(self as any).checkWaitingShows = checkWaitingShows
+  ;(self as any).checkStalledMedia = checkStalledMedia
+  ;(self as any).runScheduledChecks = runScheduledChecks
 }
 
 // ==========================================
@@ -144,8 +242,10 @@ if (typeof self !== 'undefined') {
 // ==========================================
 
 browser.notifications.onClicked.addListener(async (notificationId) => {
-  if (notificationId.startsWith('nyatching_show_')) {
-    // Prefer options page API — works without the "tabs" permission on Chrome & Firefox
+  if (
+    notificationId.startsWith('nyatching_show_') ||
+    notificationId.startsWith('nyatching_stall_')
+  ) {
     try {
       await browser.runtime.openOptionsPage()
     } catch {
@@ -172,11 +272,10 @@ browser.runtime.onStartup.addListener(async () => {
 
 browser.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) {
-    checkWaitingShows()
+    runScheduledChecks()
   }
 })
 
-// Handles messages from Settings Modal or Popup UI
 browser.runtime.onMessage.addListener(async (message: unknown) => {
   const msg = message as SystemMessage
 
@@ -186,7 +285,7 @@ browser.runtime.onMessage.addListener(async (message: unknown) => {
   }
 
   if (msg.action === 'TRIGGER_CHECK') {
-    await checkWaitingShows()
+    await runScheduledChecks()
     return { status: 'success' }
   }
 })
