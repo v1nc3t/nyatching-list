@@ -101,9 +101,8 @@ const stats = computed(() => {
   const shows = mediaList.value.filter(isShow)
   const movies = mediaList.value.filter(isMovie).length
 
-  // Counts shows that are actively tracked (defaults to true if undefined)
   const tracked = shows.filter(
-    (s) => isTrackableStatus(s.status) && (s.tracked ?? true)
+    (s) => isTrackableStatus(s.status) && s.tracked === true
   ).length
 
   return { total, watching, completed, shows: shows.length, movies, tracked }
@@ -135,14 +134,18 @@ const handleSeasonChange = async (show: Show, delta: number) => {
   await updateMedia({ id: show.id, currentSeason: nextSeason, currentEpisode: 1 })
 }
 
-// Track Toggle Helper
 const isTrackableStatus = (status: MediaStatus) => status === 'watching' || status === 'waiting'
+
+const isNotifyableStatus = (status: MediaStatus) => status === 'watching'
 
 const handleTrackToggle = async (show: Show) => {
   if (!isTrackableStatus(show.status)) return
+  await updateMedia({ id: show.id, tracked: !show.tracked })
+}
 
-  const currentlyTracked = show.tracked ?? true
-  await updateMedia({ id: show.id, tracked: !currentlyTracked })
+const handleNotifyToggle = async (item: TrackedMedia) => {
+  if (!isNotifyableStatus(item.status)) return
+  await updateMedia({ id: item.id, notifyEnabled: !item.notifyEnabled })
 }
 
 // Handlers for Movie
@@ -196,14 +199,20 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
 
     if (!isTrackableStatus(newStatus)) {
       updates.tracked = false
-    } else if (!isTrackableStatus(item.status) && isTrackableStatus(newStatus)) {
-      updates.tracked = true
+    }
+    if (!isNotifyableStatus(newStatus)) {
+      updates.notifyEnabled = false
     }
 
     await updateMedia(updates)
-  } else {
-    await updateMedia({ id: item.id, status: newStatus })
+    return
   }
+
+  const updates: Partial<Movie> & { id: string } = { id: item.id, status: newStatus }
+  if (!isNotifyableStatus(newStatus)) {
+    updates.notifyEnabled = false
+  }
+  await updateMedia(updates)
 }
 
 const handleDelete = async (id: string) => {
@@ -562,38 +571,28 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
               </div>
             </div>
 
-            <!-- SHOW ONLY: Automatic Tracking Row (Under Status) -->
-            <div v-if="isShow(item)" class="track-row-box" :class="{ disabled: !isTrackableStatus(item.status) }">
-              <div class="track-info">
-                <span class="track-label">Updates</span>
-                <span
-                  class="track-status"
-                  :class="{ active: isTrackableStatus(item.status) && (item.tracked ?? true) }"
-                >
-                  <template v-if="!isTrackableStatus(item.status)">Unavailable</template>
-                  <template v-else>{{ (item.tracked ?? true) ? 'Active' : 'Disabled' }}</template>
-                </span>
-              </div>
-
+            <!-- Track (shows) + Notify (shows & movies) — no label -->
+            <div class="action-row-box">
               <button
+                v-if="isShow(item)"
                 type="button"
-                class="track-toggle-btn"
-                :class="{ 
-                  'is-tracking': isTrackableStatus(item.status) && (item.tracked ?? true),
-                  'is-disabled': !isTrackableStatus(item.status)
+                class="action-toggle-btn"
+                :class="{
+                  'is-active': isTrackableStatus(item.status) && item.tracked === true,
+                  'is-disabled': !isTrackableStatus(item.status),
                 }"
                 :disabled="!isTrackableStatus(item.status)"
-                @click="handleTrackToggle(item)"
                 :title="
                   !isTrackableStatus(item.status)
-                    ? 'Tracking is only available for shows in Watching or Waiting status'
-                    : (item.tracked ?? true)
-                    ? 'Disable automatic updates for this show'
-                    : 'Enable automatic updates for this show'
+                    ? 'Track is only available while Watching or Waiting'
+                    : item.tracked
+                      ? 'Stop checking for new seasons'
+                      : 'Check in the background for new seasons'
                 "
+                @click="handleTrackToggle(item)"
               >
                 <svg
-                  v-if="isTrackableStatus(item.status) && (item.tracked ?? true)"
+                  v-if="isTrackableStatus(item.status) && item.tracked === true"
                   viewBox="0 0 24 24"
                   width="14"
                   height="14"
@@ -616,13 +615,59 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 >
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="16" />
-                  <line x1="8" y1="12" x2="16" y2="12" />
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
                 </svg>
-                <span>
-                  {{ !isTrackableStatus(item.status) ? 'Off' : (item.tracked ?? true) ? 'Tracked' : 'Track' }}
-                </span>
+                <span>{{ item.tracked ? 'Tracked' : 'Track' }}</span>
+              </button>
+
+              <button
+                type="button"
+                class="action-toggle-btn"
+                :class="{
+                  'is-active': isNotifyableStatus(item.status) && item.notifyEnabled === true,
+                  'is-disabled': !isNotifyableStatus(item.status),
+                }"
+                :disabled="!isNotifyableStatus(item.status)"
+                :title="
+                  !isNotifyableStatus(item.status)
+                    ? 'Notify is only available while Watching'
+                    : item.notifyEnabled
+                      ? 'Stop inactivity reminders'
+                      : 'Remind me if I stop updating progress'
+                "
+                @click="handleNotifyToggle(item)"
+              >
+                <svg
+                  v-if="isNotifyableStatus(item.status) && item.notifyEnabled === true"
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                <svg
+                  v-else
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+                <span>{{ item.notifyEnabled ? 'Notify on' : 'Notify' }}</span>
               </button>
             </div>
           </div>
@@ -1251,7 +1296,7 @@ html, body {
   flex-direction: column;
 }
 
-.progress-label, .status-label, .track-label {
+.progress-label, .status-label {
   font-size: 0.68rem;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -1298,73 +1343,50 @@ html, body {
   cursor: not-allowed;
 }
 
-/* Show Tracking Row Box */
-.track-row-box {
+/* Track / Notify action row (no label) */
+.action-row-box {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  background: var(--bg-input);
-  padding: 0.45rem 0.75rem;
-  border-radius: 8px;
-  border: 1px dashed var(--border);
-  transition: opacity 0.15s ease;
+  gap: 0.45rem;
 }
 
-.track-row-box.disabled {
-  opacity: 0.6;
-}
-
-.track-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.track-status {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  transition: color 0.15s ease;
-}
-
-.track-status.active {
-  color: var(--accent);
-}
-
-.track-toggle-btn {
+.action-toggle-btn {
+  flex: 1;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem;
-  background: var(--bg-card);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text-secondary);
-  padding: 0.25rem 0.65rem;
-  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.track-toggle-btn:hover:not(:disabled) {
+.action-toggle-btn:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text-primary);
 }
 
-.track-toggle-btn.is-tracking {
+.action-toggle-btn.is-active {
   background: var(--accent);
   color: var(--accent-contrast);
   border-color: var(--accent);
 }
 
-.track-toggle-btn.is-tracking:hover:not(:disabled) {
+.action-toggle-btn.is-active:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
 
-.track-toggle-btn.is-disabled {
+.action-toggle-btn.is-disabled,
+.action-toggle-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
-  border-color: var(--border);
+  opacity: 0.55;
 }
 
 /* Status Row & Interactive Uiverse Select */
