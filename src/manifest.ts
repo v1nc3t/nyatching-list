@@ -7,6 +7,7 @@ export default defineManifest({
   name: packageData.name,
   description: packageData.description,
   version: packageData.version,
+  homepage_url: 'https://github.com/v1nc3t/nyatching-list',
   manifest_version: 3,
   icons: {
     16: 'img/logo-16.png',
