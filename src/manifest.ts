@@ -19,7 +19,6 @@ export default defineManifest({
     default_popup: 'src/popup/popup.html',
     default_icon: 'img/logo-128.png',
   },
-  // Firefox MV3 requires background.scripts instead of background.service_worker
   background: isFirefox
     ? {
         scripts: ['src/background/background.ts'],
@@ -35,7 +34,6 @@ export default defineManifest({
       matches: ['https://www.imdb.com/*'],
     },
   ],
-  // options_ui works across Chrome + Firefox; options_page alone needs Firefox 126+
   options_ui: {
     page: 'src/dashboard/dashboard.html',
     open_in_tab: true,
@@ -45,13 +43,14 @@ export default defineManifest({
     'https://api.themoviedb.org/3/*',
     'https://www.imdb.com/*',
   ],
-  // Firefox MV3 requirements for webextension IDs during development/submission
   ...(isFirefox && {
     browser_specific_settings: {
       gecko: {
         id: 'nyatching-list@v1nc3t.github.io',
-        // 112+ required for background.type: "module"
         strict_min_version: '112.0',
+        data_collection_permissions: {
+          required: ['none'],
+        },
       },
     },
   }),
