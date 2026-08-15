@@ -80,7 +80,7 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
     if (latestSeasons > lastKnown) {
       const icon = show.posterPath && show.posterPath.startsWith('http')
         ? show.posterPath
-        : 'img/logo-128.png'
+        : browser.runtime.getURL('img/logo-128.png')
 
       const notificationId = `nyatching_show_${show.id}_${latestSeasons}_${Date.now()}`
 
@@ -90,7 +90,6 @@ const processShowUpdate = async (show: Show): Promise<boolean> => {
         iconUrl: icon,
         title: `New Season: ${show.title}`,
         message: `Season ${latestSeasons} is available! Click to open dashboard.`,
-        priority: 2
       })
 
       // Dashboard Log Entry
@@ -146,13 +145,13 @@ if (typeof self !== 'undefined') {
 
 browser.notifications.onClicked.addListener(async (notificationId) => {
   if (notificationId.startsWith('nyatching_show_')) {
-    const dashboardUrl = browser.runtime.getURL('src/dashboard/dashboard.html')
-    const tabs = await browser.tabs.query({ url: dashboardUrl })
-
-    if (tabs.length > 0 && tabs[0].id) {
-      await browser.tabs.update(tabs[0].id, { active: true })
-    } else {
-      await browser.tabs.create({ url: dashboardUrl })
+    // Prefer options page API — works without the "tabs" permission on Chrome & Firefox
+    try {
+      await browser.runtime.openOptionsPage()
+    } catch {
+      await browser.tabs.create({
+        url: browser.runtime.getURL('src/dashboard/dashboard.html'),
+      })
     }
 
     await browser.notifications.clear(notificationId)
