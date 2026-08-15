@@ -16,7 +16,7 @@ export default defineManifest({
   },
   action: {
     default_popup: 'src/popup/popup.html',
-    default_icon: 'img/logo.png',
+    default_icon: 'img/logo-128.png',
   },
   // Firefox MV3 requires background.scripts instead of background.service_worker
   background: isFirefox
@@ -48,7 +48,7 @@ export default defineManifest({
   ...(isFirefox && {
     browser_specific_settings: {
       gecko: {
-        id: 'nyatching-list@example.com', // Replace with your actual extension ID or email-style ID
+        id: 'nyatching-list@v1nc3t.github.io',
         // 112+ required for background.type: "module"
         strict_min_version: '112.0',
       },
