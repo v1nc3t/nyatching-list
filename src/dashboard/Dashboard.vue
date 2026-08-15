@@ -18,10 +18,11 @@ import {
   deleteNotificationLogItem,
   clearAllNotificationLogs,
 } from '../storage'
+import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
 import SettingsModal from './Settings.vue'
 
-// Theme (Shared via chrome.storage.local)
+// Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
 
 // Settings & Notification Drawer State
@@ -53,14 +54,12 @@ onMounted(() => {
     mediaList.value = newList
   })
 
-  // Chrome storage listener for background notifications update
-  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.nyatching_notification_log) {
-        notificationLogs.value = changes.nyatching_notification_log.newValue || []
-      }
-    })
-  }
+  // Storage listener for background notifications update
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.nyatching_notification_log) {
+      notificationLogs.value = (changes.nyatching_notification_log.newValue as NotificationItem[]) || []
+    }
+  })
 })
 
 // Unread Notification Count

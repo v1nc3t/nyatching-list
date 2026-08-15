@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import browser from 'webextension-polyfill'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
 import { useTheme } from '../utils/theme'
 import { searchTMDB, getTMDBDetails, fetchTmdbByImdbId, TMDBSuggestion } from '../services/tmdb'
 
-// Theme (Shared via chrome.storage.local)
+// Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
 
 // Open Dashboard Handler
-const openDashboard = () => {
-  if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
-    chrome.runtime.openOptionsPage()
-  } else if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
-    window.open(chrome.runtime.getURL('src/dashboard/dashboard.html'))
+const openDashboard = async () => {
+  try {
+    await browser.runtime.openOptionsPage()
+  } catch {
+    window.open(browser.runtime.getURL('src/dashboard/dashboard.html'))
   }
 }
 
@@ -46,10 +47,8 @@ let debounceTimer: ReturnType<typeof setTimeout>
 
 // Auto-detect Active Tab if on IMDb Title Page
 const detectImdbActiveTab = async (autoOpenModal = true) => {
-  if (typeof chrome === 'undefined' || !chrome.tabs?.query) return
-
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
     if (!tab || !tab.url) return
 
     const imdbMatch = tab.url.match(/\/title\/(tt\d+)/i)

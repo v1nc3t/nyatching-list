@@ -1,3 +1,4 @@
+import browser from 'webextension-polyfill';
 import {
   TrackedMedia,
   Show,
@@ -21,7 +22,6 @@ const SETTINGS_STORAGE_KEY = 'nyatching_settings' as const;
 
 const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'dropped'];
 
-// Centralized interval options for UI and background sync
 export const TIME_INTERVAL_OPTIONS = [
   { label: 'Never', hours: -1, days: -1 },
   { label: '1 Day', hours: 24, days: 1 },
@@ -32,23 +32,19 @@ export const TIME_INTERVAL_OPTIONS = [
   { label: '2 Months', hours: 1440, days: 60 },
   { label: '6 Months', hours: 4320, days: 180 },
   { label: '1 Year', hours: 8760, days: 365 },
-] as const
+] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  newSeasonCheckIntervalHours: 24, // Default: 1 Day
-  stallReminderDays: 7, // Default: 1 Week
-}
+  newSeasonCheckIntervalHours: 24,
+  stallReminderDays: 7,
+};
 
 // ==========================================
 // UTILITY & LOW-LEVEL STORAGE OPERATIONS
 // ==========================================
 
 function isStorageAvailable(): boolean {
-  if (typeof chrome === 'undefined' || !chrome.storage?.local) {
-    console.warn('[Nyatching List Storage] chrome.storage.local is not available.');
-    return false;
-  }
-  return true;
+  return typeof browser !== 'undefined' && Boolean(browser.storage?.local);
 }
 
 function generateFallbackId(title: string): string {
@@ -61,14 +57,10 @@ function generateFallbackId(title: string): string {
 
 async function setStorageData(data: Record<string, unknown>): Promise<void> {
   if (!isStorageAvailable()) return;
-
   try {
-    await chrome.storage.local.set(data);
+    await browser.storage.local.set(data);
   } catch (error) {
-    if (chrome.runtime?.lastError) {
-      console.error('[Nyatching List] Storage set failed:', chrome.runtime.lastError.message);
-      throw new Error(`Storage operation failed: ${chrome.runtime.lastError.message}`);
-    }
+    console.error('[Nyatching List] Storage set failed:', error);
     throw error;
   }
 }
@@ -79,8 +71,8 @@ async function setStorageData(data: Record<string, unknown>): Promise<void> {
 
 export const getSettings = async (): Promise<AppSettings> => {
   if (!isStorageAvailable()) return DEFAULT_SETTINGS;
-  const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
-  return { ...DEFAULT_SETTINGS, ...result[SETTINGS_STORAGE_KEY] };
+  const result = await browser.storage.local.get(SETTINGS_STORAGE_KEY);
+  return { ...DEFAULT_SETTINGS, ...(result[SETTINGS_STORAGE_KEY] as AppSettings) };
 };
 
 export const saveSettings = async (settings: Partial<AppSettings>): Promise<AppSettings> => {
@@ -96,9 +88,8 @@ export const saveSettings = async (settings: Partial<AppSettings>): Promise<AppS
 
 export async function getAllMedia(): Promise<TrackedMedia[]> {
   if (!isStorageAvailable()) return [];
-
-  const data = (await chrome.storage.local.get(STORAGE_KEY)) as Partial<StorageSchema>;
-  return data[STORAGE_KEY] ?? [];
+  const data = await browser.storage.local.get(STORAGE_KEY);
+  return (data[STORAGE_KEY] as TrackedMedia[]) ?? [];
 }
 
 export async function getShows(): Promise<Show[]> {
@@ -179,7 +170,7 @@ export async function queryMedia(options: MediaQueryOptions = {}): Promise<Track
 }
 
 // ==========================================
-// HIGH-LEVEL WRITE ACTIONS WITH PROGRESS TRACKING
+// HIGH-LEVEL WRITE ACTIONS
 // ==========================================
 
 export type AddMediaInput =
@@ -270,10 +261,6 @@ export type UpdateMediaInput = { id: string } & (
   | Partial<Omit<Movie, 'id' | 'mediaType' | 'updatedAt'>>
 );
 
-/**
- * Consolidated update function: Validates input fields, handles media-specific details,
- * and automatically recalculates `lastProgressUpdate` whenever season, episode, or minutes advance.
- */
 export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia> {
   const { id, ...updates } = input;
 
@@ -362,17 +349,14 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
 
 export async function deleteMedia(id: string): Promise<void> {
   if (!isStorageAvailable()) return;
-
   const mediaList = await getAllMedia();
   const filteredList = mediaList.filter((item) => item.id !== id);
-
   await setStorageData({ [STORAGE_KEY]: filteredList });
 }
 
 export async function clearAllMedia(): Promise<void> {
   if (!isStorageAvailable()) return;
-
-  await chrome.storage.local.remove(STORAGE_KEY);
+  await browser.storage.local.remove(STORAGE_KEY);
 }
 
 // ==========================================
@@ -381,9 +365,8 @@ export async function clearAllMedia(): Promise<void> {
 
 export async function getNotificationLog(): Promise<NotificationItem[]> {
   if (!isStorageAvailable()) return [];
-
-  const data = (await chrome.storage.local.get(NOTIFICATIONS_STORAGE_KEY)) as Partial<StorageSchema>;
-  return data[NOTIFICATIONS_STORAGE_KEY] ?? [];
+  const data = await browser.storage.local.get(NOTIFICATIONS_STORAGE_KEY);
+  return (data[NOTIFICATIONS_STORAGE_KEY] as NotificationItem[]) ?? [];
 }
 
 export async function addNotificationLog(
@@ -411,8 +394,7 @@ export async function deleteNotificationLogItem(id: string): Promise<Notificatio
 
 export async function clearAllNotificationLogs(): Promise<void> {
   if (!isStorageAvailable()) return;
-
-  await chrome.storage.local.remove(NOTIFICATIONS_STORAGE_KEY);
+  await browser.storage.local.remove(NOTIFICATIONS_STORAGE_KEY);
 }
 
 // ==========================================
@@ -425,7 +407,7 @@ export function onMediaStorageChange(
   if (!isStorageAvailable()) return () => {};
 
   const listener = (
-    changes: { [key: string]: chrome.storage.StorageChange },
+    changes: { [key: string]: browser.Storage.StorageChange },
     areaName: string
   ) => {
     if (areaName === 'local' && changes[STORAGE_KEY]) {
@@ -433,9 +415,9 @@ export function onMediaStorageChange(
     }
   };
 
-  chrome.storage.onChanged.addListener(listener);
+  browser.storage.onChanged.addListener(listener);
 
   return () => {
-    chrome.storage.onChanged.removeListener(listener);
+    browser.storage.onChanged.removeListener(listener);
   };
 }

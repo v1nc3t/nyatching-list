@@ -8,6 +8,7 @@
   "license": "MIT",
   "keywords": [
     "chrome-extension",
+    "firefox-extension",
     "vue",
     "vite",
     "create-chrome-ext"
@@ -17,17 +18,22 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:firefox": "TARGET_BROWSER=firefox vite",
     "build": "vue-tsc --noEmit && vite build",
+    "build:firefox": "vue-tsc --noEmit && TARGET_BROWSER=firefox vite build",
     "preview": "vite preview",
     "fmt": "prettier --write '**/*.{vue,ts,json,css,scss,md}'",
     "zip": "npm run build && node src/zip.js"
   },
   "dependencies": {
-    "vue": "^3.3.4"
+    "vue": "^3.3.4",
+    "webextension-polyfill": "^0.12.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.26",
     "@types/chrome": "^0.0.246",
+    "@types/firefox-webext-browser": "^120.0.1",
+    "@types/webextension-polyfill": "^0.12.5",
     "@vitejs/plugin-vue": "^6.0.8",
     "gulp": "^5.0.0",
     "gulp-zip": "^6.0.0",

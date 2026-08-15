@@ -1,4 +1,5 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
+import browser from 'webextension-polyfill'
 
 export type Theme = 'light' | 'dark'
 const THEME_STORAGE_KEY = 'nyatching_theme'
@@ -18,15 +19,17 @@ export function applyThemeToDocument(theme: Theme): void {
 export function useTheme() {
   const theme = ref<Theme>('dark')
 
-  // 1. Get initial theme from chrome.storage.local (with system preference fallback)
+  // 1. Get initial theme from extension storage (with system preference fallback)
   const initTheme = async () => {
-    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      const data = await chrome.storage.local.get(THEME_STORAGE_KEY)
+    try {
+      const data = await browser.storage.local.get(THEME_STORAGE_KEY)
       if (data[THEME_STORAGE_KEY]) {
         theme.value = data[THEME_STORAGE_KEY] as Theme
         applyThemeToDocument(theme.value)
         return
       }
+    } catch {
+      // Storage unavailable (e.g. plain browser preview) — fall through
     }
 
     // Fallback: check system color scheme preference
@@ -40,27 +43,27 @@ export function useTheme() {
 
   initTheme()
 
-  // 2. Reactively listen to chrome.storage changes from OTHER pages/tabs
-  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === 'local' && changes[THEME_STORAGE_KEY]) {
-        const newTheme = changes[THEME_STORAGE_KEY].newValue as Theme
-        if (newTheme && newTheme !== theme.value) {
-          theme.value = newTheme
-          applyThemeToDocument(newTheme)
-        }
+  // 2. Reactively listen to storage changes from OTHER pages/tabs
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes[THEME_STORAGE_KEY]) {
+      const newTheme = changes[THEME_STORAGE_KEY].newValue as Theme
+      if (newTheme && newTheme !== theme.value) {
+        theme.value = newTheme
+        applyThemeToDocument(newTheme)
       }
-    })
-  }
+    }
+  })
 
-  // 3. Save theme changes to chrome.storage.local when toggled
+  // 3. Save theme changes to extension storage when toggled
   const toggleTheme = async () => {
     const nextTheme: Theme = theme.value === 'dark' ? 'light' : 'dark'
     theme.value = nextTheme
     applyThemeToDocument(nextTheme)
 
-    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      await chrome.storage.local.set({ [THEME_STORAGE_KEY]: nextTheme })
+    try {
+      await browser.storage.local.set({ [THEME_STORAGE_KEY]: nextTheme })
+    } catch (error) {
+      console.error('[Nyatching List] Failed to persist theme:', error)
     }
   }
 
