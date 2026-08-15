@@ -23,6 +23,7 @@ const mediaCount = ref(0)
 const isModalOpen = ref(false)
 const errorMessage = ref('')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
+const supportLink = ref('https://buymeacoffee.com/v1c3nt')
 const isImdbPage = ref(false)
 
 // Form State
@@ -544,10 +545,14 @@ const handleAddMediaSubmit = async () => {
       </form>
     </div>
 
-    <!-- Footer GitHub Link -->
-    <footer>
-      <a :href="githubLink" target="_blank" rel="noopener noreferrer">
+    <!-- Footer -->
+    <footer class="site-footer">
+      <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         created by v1nc3t
+      </a>
+      <span class="footer-divider" aria-hidden="true">•</span>
+      <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
+        support v1nc3t
       </a>
     </footer>
   </main>
@@ -1121,18 +1126,29 @@ p {
   text-align: center;
 }
 
-footer {
-  margin-top: 0.35rem;
-  text-align: center;
+.site-footer {
+  padding: 1rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
 }
 
-a {
-  font-size: 0.68rem;
+.footer-link {
+  font-size: 0.75rem;
   color: var(--text-muted);
   text-decoration: none;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
 }
 
-a:hover {
+.footer-link:hover {
   color: var(--accent);
+  text-decoration: line-through;
+  text-decoration-color: var(--accent);
+}
+
+.footer-divider {
+  font-size: 0.75rem;
+  color: var(--border);
 }
 </style>

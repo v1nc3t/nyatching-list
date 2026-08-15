@@ -36,6 +36,7 @@ const search = ref('')
 const statusFilter = ref<MediaStatus | 'all'>('all')
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
+const supportLink = ref('https://buymeacoffee.com/v1c3nt')
 
 const loadMedia = async () => {
   mediaList.value = await getAllMedia()
@@ -629,10 +630,14 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
       </div>
     </main>
 
-    <!-- Footer Section -->
-    <footer>
-      <a :href="githubLink" target="_blank" rel="noopener noreferrer">
+    <!-- Footer -->
+    <footer class="site-footer">
+      <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         created by v1nc3t
+      </a>
+      <span class="footer-divider" aria-hidden="true">•</span>
+      <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
+        support v1nc3t
       </a>
     </footer>
   </div>
@@ -1481,22 +1486,29 @@ html, body {
   color: var(--text-secondary);
 }
 
-/* Footer Link */
-footer {
-  padding: 1.5rem 0;
-  text-align: center;
-  border-top: 1px solid var(--border);
-  background: var(--bg-card);
+.site-footer {
+  padding: 1rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
 }
 
-footer a {
-  font-size: 0.82rem;
+.footer-link {
+  font-size: 0.75rem;
   color: var(--text-muted);
   text-decoration: none;
-  transition: color 0.15s ease;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
 }
 
-footer a:hover {
+.footer-link:hover {
   color: var(--accent);
+  text-decoration: line-through;
+  text-decoration-color: var(--accent);
+}
+
+.footer-divider {
+  font-size: 0.75rem;
+  color: var(--border);
 }
 </style>
