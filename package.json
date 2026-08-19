@@ -1,7 +1,7 @@
 {
   "name": "nyatching-list",
   "displayName": "nyatching-list",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "**",
   "description": "An extention to keep track of tv shows and movies that you are currently watching",
   "type": "module",
