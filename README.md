@@ -1,8 +1,24 @@
 # Nyatching List
 
+[![Manifest V3](https://img.shields.io/badge/Manifest-MV3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/mv3/intro/)
+[![Vue.js](https://img.shields.io/badge/Vue.js-3.x-4fc08d?style=flat-square&logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-Build-646cff?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![TMDB API](https://img.shields.io/badge/API-TMDB-01b4e4?style=flat-square&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+
 A browser extension that helps you keep track of TV shows and movies you are watching.
 
-Works on **Chrome** and **Firefox**.
+<img src="./src/assets/nyatching-list-dashboard-dark.png" alt="Dashboard dark" width="100%" />
+
+---
+
+## Installation
+
+| Platform | Link |
+| --- | --- |
+| **Chrome / Brave / Edge** | [Chrome Web Store](https://chromewebstore.google.com/detail/nyatching-list/lfclngikmpcnhmgmakapkcmlpkbgjcna) |
+| **Firefox** | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/nyatching-list/) |
 
 ---
 
