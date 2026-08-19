@@ -120,6 +120,23 @@ Load the unpacked extension from the `build` or `build-firefox` folder while dev
 
 ---
 
+## Release Process
+
+This repository uses GitHub Actions to automatically build and release extension packages.
+
+To cut a new release:
+
+1. Update the version number in `package.json` (e.g., `"1.0.1"`).
+2. Commit your changes and push a matching Git tag:
+```bash
+   git add package.json
+   git commit -m "chore: release v1.0.1"
+   git tag v1.0.1
+   git push origin main --tags
+```
+
+---
+
 ## Contributing
 
 Bug reports and pull requests are welcome. Please keep changes focused and describe what you changed and why.
