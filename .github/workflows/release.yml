@@ -1,0 +1,59 @@
+name: Build and Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers whenever you push a tag starting with 'v', like v1.0.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js environment
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # 3. Install dependencies
+      - name: Install Dependencies
+        run: npm ci
+
+      # 4. Build Chrome Version
+      - name: Build Chrome Extension
+        run: |
+          npm run build
+          cd build && zip -r ../nyatching-chrome.zip * && cd ..
+
+      # 5. Build Firefox Version
+      - name: Build Firefox Extension
+        env:
+          TARGET_BROWSER: firefox
+        run: |
+          npm run build
+          cd build-firefox && zip -r ../nyatching-firefox.zip * && cd ..
+
+      # 6. Create Source Code Zip for AMO Submission
+      - name: Create Source Code Zip
+        run: |
+          zip -r source-code.zip . -x "node_modules/*" -x ".git/*" -x "build/*" -x "build-firefox/*" -x "*.zip"
+
+      # 7. Create GitHub Release and Upload Artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            nyatching-chrome.zip
+            nyatching-firefox.zip
+            source-code.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
