@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*' # Triggers whenever you push a tag starting with 'v', like v1.0.0
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       # 3. Install dependencies
