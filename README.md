@@ -106,8 +106,8 @@ In settings you can control:
 
 ```bash
 npm install
-npm run dev          # Chrome
-npm run dev:firefox  # Firefox
+npm run dev          # Chrome (HMR via Vite)
+npm run dev:firefox  # Firefox (build --watch)
 ```
 
 ```bash
@@ -116,7 +116,8 @@ npm run build:chrome   # → build/
 npm run build:firefox  # → build-firefox/
 ```
 
-Load the unpacked extension from the `build` or `build-firefox` folder while developing.
+- **Chrome:** run `npm run dev`, then load `build/` as an unpacked extension.
+- **Firefox:** run `npm run dev:firefox`, then load `build-firefox/manifest.json` from `about:debugging`. Firefox MV3 blocks scripts from localhost, so HMR is not available — use watch mode and click **Reload** on the temporary add-on after changes.
 
 ---
 
