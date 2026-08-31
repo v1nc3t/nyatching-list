@@ -166,7 +166,10 @@ const handleMinutesChange = async (movie: Movie, delta: number) => {
 }
 
 const handleMinutesWheel = (event: WheelEvent, movie: Movie) => {
-  if (document.activeElement !== event.currentTarget) return
+  const root = event.currentTarget as HTMLElement
+  const input = root instanceof HTMLInputElement ? root : root.querySelector('input')
+  if (!input || document.activeElement !== input) return
+  event.preventDefault()
   const delta = event.deltaY < 0 ? 5 : -5
   handleMinutesChange(movie, delta)
 }
@@ -524,15 +527,20 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
                   <span class="progress-label">Minutes Watched</span>
                 </div>
                 
-                <div class="input-wrapper">
+                <div
+                  class="input-wrapper"
+                  title="Focus, then scroll to adjust"
+                  @wheel="handleMinutesWheel($event, item)"
+                >
                   <input
                     type="number"
                     min="0"
                     :max="item.runtimeMinutes || undefined"
                     :value="item.currentMinutes"
                     class="minutes-scroll-input"
+                    step="5"
                     @input="handleMinutesInput($event, item)"
-                    @wheel.prevent="handleMinutesWheel($event, item)"
+                    @wheel.prevent.stop="handleMinutesWheel($event, item)"
                   />
                   <span v-if="item.runtimeMinutes" class="runtime-suffix">/ {{ item.runtimeMinutes }}m</span>
                   <span v-else class="runtime-suffix">m</span>
@@ -1262,6 +1270,10 @@ html, body {
   border-color: var(--accent);
 }
 
+.input-wrapper:focus-within .minutes-scroll-input {
+  cursor: ns-resize;
+}
+
 .minutes-scroll-input {
   width: 3rem;
   background: transparent;
@@ -1274,7 +1286,8 @@ html, body {
   padding: 0;
   margin: 0;
   line-height: 1;
-  -appearance: textfield;
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
 .minutes-scroll-input::-webkit-outer-spin-button,
