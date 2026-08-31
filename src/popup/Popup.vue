@@ -4,7 +4,16 @@ import browser from 'webextension-polyfill'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
 import { useTheme } from '../utils/theme'
-import { searchTMDB, getTMDBDetails, fetchTmdbByImdbId, TMDBSuggestion } from '../services/tmdb'
+import {
+  searchTMDB,
+  getTMDBDetails,
+  fetchTmdbByImdbId,
+  parseTMDBShowInfo,
+  getEpisodeCountForSeason,
+  completedProgressFromShowInfo,
+  TMDBSuggestion,
+  TMDBShowInfo,
+} from '../services/tmdb'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -36,9 +45,11 @@ const formEpisode = ref(1)
 const formMinutes = ref(0)
 const formRuntimeMinutes = ref('')
 const formTotalSeasons = ref('')
+const formTotalEpisodes = ref('')
 const formReleaseYear = ref('')
 const selectedPosterPath = ref<string | undefined>(undefined)
 const selectedTmdbId = ref<number | undefined>(undefined)
+const tmdbShowInfo = ref<TMDBShowInfo | null>(null)
 
 // TMDB Auto-complete State
 const suggestions = ref<TMDBSuggestion[]>([])
@@ -86,10 +97,15 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
         if (tmdbData.releaseYear) {
           formReleaseYear.value = tmdbData.releaseYear.toString()
         }
-        if (tmdbData.mediaType === 'show' && tmdbData.totalSeasons) {
-          formTotalSeasons.value = tmdbData.totalSeasons.toString()
+        if (tmdbData.mediaType === 'show') {
+          tmdbShowInfo.value = tmdbData.showInfo ?? null
+          if (tmdbData.totalSeasons) {
+            formTotalSeasons.value = tmdbData.totalSeasons.toString()
+          }
+          applyShowProgressFromTmdb()
         } else if (tmdbData.mediaType === 'movie' && tmdbData.runtimeMinutes) {
           formRuntimeMinutes.value = tmdbData.runtimeMinutes.toString()
+          applyCompletedProgress()
         }
 
         if (autoOpenModal) {
@@ -104,21 +120,102 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
   }
 }
 
-// Watch Total Seasons to Reset Current Season to 1
-watch(formTotalSeasons, () => {
+const applyCompletedProgress = () => {
+  if (formStatus.value !== 'completed') return
+
+  if (formType.value === 'show') {
+    if (tmdbShowInfo.value) {
+      const progress = completedProgressFromShowInfo(tmdbShowInfo.value)
+      formSeason.value = progress.currentSeason
+      formEpisode.value = progress.currentEpisode
+      formTotalSeasons.value = progress.totalSeasons.toString()
+      formTotalEpisodes.value = progress.totalEpisodes.toString()
+      return
+    }
+
+    const totalSeasons = Number(formTotalSeasons.value)
+    if (formTotalSeasons.value !== '' && !isNaN(totalSeasons) && totalSeasons > 0) {
+      formSeason.value = totalSeasons
+    }
+    const totalEpisodes = Number(formTotalEpisodes.value)
+    if (formTotalEpisodes.value !== '' && !isNaN(totalEpisodes) && totalEpisodes > 0) {
+      formEpisode.value = totalEpisodes
+    }
+    return
+  }
+
+  const runtime = Number(formRuntimeMinutes.value)
+  if (formRuntimeMinutes.value !== '' && !isNaN(runtime) && runtime > 0) {
+    formMinutes.value = runtime
+  }
+}
+
+const applyShowProgressFromTmdb = () => {
+  const info = tmdbShowInfo.value
+  if (!info) return
+
+  formTotalSeasons.value = info.totalSeasons.toString()
+
+  if (formStatus.value === 'completed') {
+    applyCompletedProgress()
+    return
+  }
+
   formSeason.value = 1
+  formEpisode.value = 1
+  const seasonOneCount = getEpisodeCountForSeason(info, 1)
+  formTotalEpisodes.value = seasonOneCount ? seasonOneCount.toString() : ''
+}
+
+// Clamp season against total seasons and sync episode count for the selected season
+watch(formTotalSeasons, () => {
+  const total = Number(formTotalSeasons.value)
+  if (formTotalSeasons.value !== '' && !isNaN(total) && total > 0 && formSeason.value > total) {
+    formSeason.value = total
+  }
 })
 
-// Guard Season from Exceeding Total Seasons
 watch(formSeason, (newSeason) => {
   const total = Number(formTotalSeasons.value)
   if (formTotalSeasons.value !== '' && !isNaN(total) && total > 0) {
     if (newSeason > total) {
       formSeason.value = total
+      return
     }
   }
   if (newSeason < 1) {
     formSeason.value = 1
+    return
+  }
+
+  const info = tmdbShowInfo.value
+  if (info) {
+    const episodeCount = getEpisodeCountForSeason(info, newSeason)
+    if (episodeCount) {
+      formTotalEpisodes.value = episodeCount.toString()
+      if (formEpisode.value > episodeCount) {
+        formEpisode.value = episodeCount
+      }
+    }
+  }
+})
+
+watch(formTotalEpisodes, () => {
+  const total = Number(formTotalEpisodes.value)
+  if (formTotalEpisodes.value !== '' && !isNaN(total) && total > 0 && formEpisode.value > total) {
+    formEpisode.value = total
+  }
+})
+
+watch(formType, () => {
+  if (formStatus.value === 'completed') {
+    applyCompletedProgress()
+  }
+})
+
+watch([formTotalSeasons, formTotalEpisodes, formRuntimeMinutes], () => {
+  if (formStatus.value === 'completed') {
+    applyCompletedProgress()
   }
 })
 
@@ -158,13 +255,15 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
     formReleaseYear.value = item.year.toString()
   }
 
-  const details = await getTMDBDetails(item.id, item.mediaType)
-  if (details) {
-    if (item.mediaType === 'show') {
-      formTotalSeasons.value = details.number_of_seasons ? details.number_of_seasons.toString() : ''
-    } else {
-      formRuntimeMinutes.value = details.runtime ? details.runtime.toString() : ''
-    }
+  if (item.mediaType === 'show') {
+    const details = await getTMDBDetails(item.id, 'show')
+    tmdbShowInfo.value = parseTMDBShowInfo(details)
+    applyShowProgressFromTmdb()
+  } else {
+    tmdbShowInfo.value = null
+    const details = await getTMDBDetails(item.id, 'movie')
+    formRuntimeMinutes.value = details?.runtime ? details.runtime.toString() : ''
+    applyCompletedProgress()
   }
 }
 
@@ -197,9 +296,11 @@ const closeModal = () => {
   formMinutes.value = 0
   formRuntimeMinutes.value = ''
   formTotalSeasons.value = ''
+  formTotalEpisodes.value = ''
   formReleaseYear.value = ''
   selectedPosterPath.value = undefined
   selectedTmdbId.value = undefined
+  tmdbShowInfo.value = null
   suggestions.value = []
   showSuggestions.value = false
   isSelectingSuggestion.value = false
@@ -217,6 +318,9 @@ const openModal = () => {
 
 const setStatus = (status: MediaStatus) => {
   formStatus.value = status
+  if (status === 'completed') {
+    applyCompletedProgress()
+  }
 }
 
 const formatStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -249,6 +353,7 @@ const handleAddMediaSubmit = async () => {
 
   if (formType.value === 'show') {
     const totalSeasonsNum = Number(formTotalSeasons.value)
+    const totalEpisodesNum = Number(formTotalEpisodes.value)
 
     payload = {
       mediaType: 'show',
@@ -261,7 +366,10 @@ const handleAddMediaSubmit = async () => {
       tmdbId: selectedTmdbId.value,
       ...(formTotalSeasons.value !== '' && !isNaN(totalSeasonsNum)
         ? { totalSeasons: totalSeasonsNum }
-        : {})
+        : {}),
+      ...(formTotalEpisodes.value !== '' && !isNaN(totalEpisodesNum)
+        ? { totalEpisodes: totalEpisodesNum }
+        : {}),
     }
   } else {
     const releaseYearNum = Number(formReleaseYear.value)
@@ -532,28 +640,50 @@ const handleAddMediaSubmit = async () => {
                   v-model.number="formEpisode"
                   type="number"
                   min="1"
+                  :max="formTotalEpisodes ? Number(formTotalEpisodes) : undefined"
                   title="Focus, then scroll to adjust"
                   @wheel.prevent="
-                    handleNumberWheel($event, formEpisode, (n) => (formEpisode = n), { min: 1 })
+                    handleNumberWheel($event, formEpisode, (n) => (formEpisode = n), {
+                      min: 1,
+                      max: formTotalEpisodes ? Number(formTotalEpisodes) : undefined,
+                    })
                   "
                 />
               </div>
             </div>
-            <div class="form-group">
-              <label for="total-seasons-input">Total Seasons (optional)</label>
-              <input
-                id="total-seasons-input"
-                v-model="formTotalSeasons"
-                type="number"
-                min="1"
-                placeholder="e.g. 5"
-                title="Focus, then scroll to adjust"
-                @wheel.prevent="
-                  handleNumberWheel($event, formTotalSeasons, (n) => (formTotalSeasons = String(n)), {
-                    min: 1,
-                  })
-                "
-              />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="total-seasons-input">Total Seasons (optional)</label>
+                <input
+                  id="total-seasons-input"
+                  v-model="formTotalSeasons"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 5"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel($event, formTotalSeasons, (n) => (formTotalSeasons = String(n)), {
+                      min: 1,
+                    })
+                  "
+                />
+              </div>
+              <div class="form-group">
+                <label for="total-episodes-input">Total Episodes (optional)</label>
+                <input
+                  id="total-episodes-input"
+                  v-model="formTotalEpisodes"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 10"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel($event, formTotalEpisodes, (n) => (formTotalEpisodes = String(n)), {
+                      min: 1,
+                    })
+                  "
+                />
+              </div>
             </div>
           </template>
 

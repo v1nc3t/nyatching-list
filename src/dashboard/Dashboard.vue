@@ -21,6 +21,14 @@ import {
 import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
 import SettingsModal from './Settings.vue'
+import {
+  getTMDBShowInfo,
+  getEpisodeCountForSeason,
+  completedProgressFromShowInfo,
+  resolveCompletedShowProgress,
+  resolveCompletedMovieProgress,
+  TMDBShowInfo,
+} from '../services/tmdb'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -37,6 +45,15 @@ const statusFilter = ref<MediaStatus | 'all'>('all')
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
 const supportLink = ref('https://buymeacoffee.com/v1c3nt')
+const showInfoCache = new Map<number, TMDBShowInfo>()
+
+const loadShowInfo = async (tmdbId: number): Promise<TMDBShowInfo | null> => {
+  const cached = showInfoCache.get(tmdbId)
+  if (cached) return cached
+  const info = await getTMDBShowInfo(tmdbId)
+  if (info) showInfoCache.set(tmdbId, info)
+  return info
+}
 
 const loadMedia = async () => {
   mediaList.value = await getAllMedia()
@@ -120,8 +137,17 @@ const filteredMedia = computed(() => {
 
 // Handlers for Show
 const handleEpisodeChange = async (show: Show, delta: number) => {
-  const nextEpisode = Math.max(1, show.currentEpisode + delta)
-  await updateMedia({ id: show.id, currentEpisode: nextEpisode })
+  let nextEpisode = Math.max(1, show.currentEpisode + delta)
+  if (show.totalEpisodes && show.totalEpisodes > 0) {
+    nextEpisode = Math.min(nextEpisode, show.totalEpisodes)
+  }
+
+  let updatedStatus: MediaStatus = show.status
+  if (nextEpisode < show.currentEpisode && show.status === 'completed') {
+    updatedStatus = 'watching'
+  }
+
+  await updateMedia({ id: show.id, currentEpisode: nextEpisode, status: updatedStatus })
 }
 
 const handleSeasonChange = async (show: Show, delta: number) => {
@@ -131,7 +157,25 @@ const handleSeasonChange = async (show: Show, delta: number) => {
     nextSeason = Math.min(nextSeason, show.totalSeasons)
   }
 
-  await updateMedia({ id: show.id, currentSeason: nextSeason, currentEpisode: 1 })
+  const updates: Partial<Show> & { id: string } = {
+    id: show.id,
+    currentSeason: nextSeason,
+    currentEpisode: 1,
+  }
+
+  if (show.tmdbId) {
+    const info = await loadShowInfo(show.tmdbId)
+    const episodeCount = info ? getEpisodeCountForSeason(info, nextSeason) : undefined
+    if (episodeCount) {
+      updates.totalEpisodes = episodeCount
+    }
+  }
+
+  if (nextSeason < show.currentSeason && show.status === 'completed') {
+    updates.status = 'watching'
+  }
+
+  await updateMedia(updates)
 }
 
 const isTrackableStatus = (status: MediaStatus) => status === 'watching' || status === 'waiting'
@@ -207,6 +251,23 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
       updates.notifyEnabled = false
     }
 
+    if (newStatus === 'completed') {
+      let progress = null
+      if (item.tmdbId) {
+        const info = await loadShowInfo(item.tmdbId)
+        if (info) progress = completedProgressFromShowInfo(info)
+      }
+      if (!progress) {
+        progress = await resolveCompletedShowProgress(undefined, item)
+      }
+      if (progress) {
+        updates.currentSeason = progress.currentSeason
+        updates.currentEpisode = progress.currentEpisode
+        updates.totalSeasons = progress.totalSeasons
+        updates.totalEpisodes = progress.totalEpisodes
+      }
+    }
+
     await updateMedia(updates)
     return
   }
@@ -215,6 +276,15 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
   if (!isNotifyableStatus(newStatus)) {
     updates.notifyEnabled = false
   }
+
+  if (newStatus === 'completed') {
+    const progress = await resolveCompletedMovieProgress(item.tmdbId, item)
+    updates.currentMinutes = progress.currentMinutes
+    if (progress.runtimeMinutes) {
+      updates.runtimeMinutes = progress.runtimeMinutes
+    }
+  }
+
   await updateMedia(updates)
 }
 
@@ -511,11 +581,18 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
               <div class="progress-box">
                 <div class="progress-info">
                   <span class="progress-label">Episode</span>
-                  <span class="progress-val">{{ item.currentEpisode }}</span>
+                  <span class="progress-val">
+                    {{ item.currentEpisode }}
+                    <span v-if="item.totalEpisodes" class="total-val">/ {{ item.totalEpisodes }}</span>
+                  </span>
                 </div>
                 <div class="btn-group">
                   <button class="stepper-btn" :disabled="item.currentEpisode <= 1" @click="handleEpisodeChange(item, -1)">-</button>
-                  <button class="stepper-btn" @click="handleEpisodeChange(item, 1)">+</button>
+                  <button
+                    class="stepper-btn"
+                    :disabled="!!item.totalEpisodes && item.currentEpisode >= item.totalEpisodes"
+                    @click="handleEpisodeChange(item, 1)"
+                  >+</button>
                 </div>
               </div>
             </div>
