@@ -4,7 +4,16 @@ import browser from 'webextension-polyfill'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
 import { useTheme } from '../utils/theme'
-import { searchTMDB, getTMDBDetails, fetchTmdbByImdbId, TMDBSuggestion } from '../services/tmdb'
+import {
+  searchTMDB,
+  getTMDBDetails,
+  fetchTmdbByImdbId,
+  parseTMDBShowInfo,
+  getEpisodeCountForSeason,
+  completedProgressFromShowInfo,
+  TMDBSuggestion,
+  TMDBShowInfo,
+} from '../services/tmdb'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -36,9 +45,11 @@ const formEpisode = ref(1)
 const formMinutes = ref(0)
 const formRuntimeMinutes = ref('')
 const formTotalSeasons = ref('')
+const formTotalEpisodes = ref('')
 const formReleaseYear = ref('')
 const selectedPosterPath = ref<string | undefined>(undefined)
 const selectedTmdbId = ref<number | undefined>(undefined)
+const tmdbShowInfo = ref<TMDBShowInfo | null>(null)
 
 // TMDB Auto-complete State
 const suggestions = ref<TMDBSuggestion[]>([])
@@ -86,10 +97,15 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
         if (tmdbData.releaseYear) {
           formReleaseYear.value = tmdbData.releaseYear.toString()
         }
-        if (tmdbData.mediaType === 'show' && tmdbData.totalSeasons) {
-          formTotalSeasons.value = tmdbData.totalSeasons.toString()
+        if (tmdbData.mediaType === 'show') {
+          tmdbShowInfo.value = tmdbData.showInfo ?? null
+          if (tmdbData.totalSeasons) {
+            formTotalSeasons.value = tmdbData.totalSeasons.toString()
+          }
+          applyShowProgressFromTmdb()
         } else if (tmdbData.mediaType === 'movie' && tmdbData.runtimeMinutes) {
           formRuntimeMinutes.value = tmdbData.runtimeMinutes.toString()
+          applyCompletedProgress()
         }
 
         if (autoOpenModal) {
@@ -104,21 +120,102 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
   }
 }
 
-// Watch Total Seasons to Reset Current Season to 1
-watch(formTotalSeasons, () => {
+const applyCompletedProgress = () => {
+  if (formStatus.value !== 'completed') return
+
+  if (formType.value === 'show') {
+    if (tmdbShowInfo.value) {
+      const progress = completedProgressFromShowInfo(tmdbShowInfo.value)
+      formSeason.value = progress.currentSeason
+      formEpisode.value = progress.currentEpisode
+      formTotalSeasons.value = progress.totalSeasons.toString()
+      formTotalEpisodes.value = progress.totalEpisodes.toString()
+      return
+    }
+
+    const totalSeasons = Number(formTotalSeasons.value)
+    if (formTotalSeasons.value !== '' && !isNaN(totalSeasons) && totalSeasons > 0) {
+      formSeason.value = totalSeasons
+    }
+    const totalEpisodes = Number(formTotalEpisodes.value)
+    if (formTotalEpisodes.value !== '' && !isNaN(totalEpisodes) && totalEpisodes > 0) {
+      formEpisode.value = totalEpisodes
+    }
+    return
+  }
+
+  const runtime = Number(formRuntimeMinutes.value)
+  if (formRuntimeMinutes.value !== '' && !isNaN(runtime) && runtime > 0) {
+    formMinutes.value = runtime
+  }
+}
+
+const applyShowProgressFromTmdb = () => {
+  const info = tmdbShowInfo.value
+  if (!info) return
+
+  formTotalSeasons.value = info.totalSeasons.toString()
+
+  if (formStatus.value === 'completed') {
+    applyCompletedProgress()
+    return
+  }
+
   formSeason.value = 1
+  formEpisode.value = 1
+  const seasonOneCount = getEpisodeCountForSeason(info, 1)
+  formTotalEpisodes.value = seasonOneCount ? seasonOneCount.toString() : ''
+}
+
+// Clamp season against total seasons and sync episode count for the selected season
+watch(formTotalSeasons, () => {
+  const total = Number(formTotalSeasons.value)
+  if (formTotalSeasons.value !== '' && !isNaN(total) && total > 0 && formSeason.value > total) {
+    formSeason.value = total
+  }
 })
 
-// Guard Season from Exceeding Total Seasons
 watch(formSeason, (newSeason) => {
   const total = Number(formTotalSeasons.value)
   if (formTotalSeasons.value !== '' && !isNaN(total) && total > 0) {
     if (newSeason > total) {
       formSeason.value = total
+      return
     }
   }
   if (newSeason < 1) {
     formSeason.value = 1
+    return
+  }
+
+  const info = tmdbShowInfo.value
+  if (info) {
+    const episodeCount = getEpisodeCountForSeason(info, newSeason)
+    if (episodeCount) {
+      formTotalEpisodes.value = episodeCount.toString()
+      if (formEpisode.value > episodeCount) {
+        formEpisode.value = episodeCount
+      }
+    }
+  }
+})
+
+watch(formTotalEpisodes, () => {
+  const total = Number(formTotalEpisodes.value)
+  if (formTotalEpisodes.value !== '' && !isNaN(total) && total > 0 && formEpisode.value > total) {
+    formEpisode.value = total
+  }
+})
+
+watch(formType, () => {
+  if (formStatus.value === 'completed') {
+    applyCompletedProgress()
+  }
+})
+
+watch([formTotalSeasons, formTotalEpisodes, formRuntimeMinutes], () => {
+  if (formStatus.value === 'completed') {
+    applyCompletedProgress()
   }
 })
 
@@ -158,13 +255,15 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
     formReleaseYear.value = item.year.toString()
   }
 
-  const details = await getTMDBDetails(item.id, item.mediaType)
-  if (details) {
-    if (item.mediaType === 'show') {
-      formTotalSeasons.value = details.number_of_seasons ? details.number_of_seasons.toString() : ''
-    } else {
-      formRuntimeMinutes.value = details.runtime ? details.runtime.toString() : ''
-    }
+  if (item.mediaType === 'show') {
+    const details = await getTMDBDetails(item.id, 'show')
+    tmdbShowInfo.value = parseTMDBShowInfo(details)
+    applyShowProgressFromTmdb()
+  } else {
+    tmdbShowInfo.value = null
+    const details = await getTMDBDetails(item.id, 'movie')
+    formRuntimeMinutes.value = details?.runtime ? details.runtime.toString() : ''
+    applyCompletedProgress()
   }
 }
 
@@ -197,9 +296,11 @@ const closeModal = () => {
   formMinutes.value = 0
   formRuntimeMinutes.value = ''
   formTotalSeasons.value = ''
+  formTotalEpisodes.value = ''
   formReleaseYear.value = ''
   selectedPosterPath.value = undefined
   selectedTmdbId.value = undefined
+  tmdbShowInfo.value = null
   suggestions.value = []
   showSuggestions.value = false
   isSelectingSuggestion.value = false
@@ -217,9 +318,33 @@ const openModal = () => {
 
 const setStatus = (status: MediaStatus) => {
   formStatus.value = status
+  if (status === 'completed') {
+    applyCompletedProgress()
+  }
 }
 
 const formatStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+const handleNumberWheel = (
+  event: WheelEvent,
+  current: number | string,
+  assign: (value: number) => void,
+  opts: { min?: number; max?: number; step?: number } = {},
+) => {
+  if (document.activeElement !== event.currentTarget) return
+  event.preventDefault()
+
+  const { min = 0, step = 1 } = opts
+  const parsed = typeof current === 'string' ? Number(current) : current
+  const base = Number.isFinite(parsed) ? parsed : min
+  const delta = event.deltaY < 0 ? step : -step
+  let next = base + delta
+  if (next < min) next = min
+  if (opts.max !== undefined && Number.isFinite(opts.max) && next > opts.max) {
+    next = opts.max
+  }
+  assign(next)
+}
 
 const handleAddMediaSubmit = async () => {
   errorMessage.value = ''
@@ -228,6 +353,7 @@ const handleAddMediaSubmit = async () => {
 
   if (formType.value === 'show') {
     const totalSeasonsNum = Number(formTotalSeasons.value)
+    const totalEpisodesNum = Number(formTotalEpisodes.value)
 
     payload = {
       mediaType: 'show',
@@ -240,7 +366,10 @@ const handleAddMediaSubmit = async () => {
       tmdbId: selectedTmdbId.value,
       ...(formTotalSeasons.value !== '' && !isNaN(totalSeasonsNum)
         ? { totalSeasons: totalSeasonsNum }
-        : {})
+        : {}),
+      ...(formTotalEpisodes.value !== '' && !isNaN(totalEpisodesNum)
+        ? { totalEpisodes: totalEpisodesNum }
+        : {}),
     }
   } else {
     const releaseYearNum = Number(formReleaseYear.value)
@@ -273,18 +402,18 @@ const handleAddMediaSubmit = async () => {
 </script>
 
 <template>
-  <main>
-    <div class="header-row">
-      <div class="header-text">
+  <main class="popup-root" :class="{ 'is-adding': isModalOpen }">
+    <header class="navbar">
+      <div class="brand">
         <button
           type="button"
           class="title-btn"
           @click="openDashboard"
           title="Open Dashboard"
         >
-          <h3>Nyatching list</h3>
+          <h1>NYATCHING LIST</h1>
         </button>
-        <p>List of tv shows and movies currently watching</p>
+        <p v-if="!isModalOpen" class="subtitle">List of tv shows and movies currently watching</p>
       </div>
 
       <div class="header-actions">
@@ -335,23 +464,24 @@ const handleAddMediaSubmit = async () => {
           </svg>
         </button>
       </div>
-    </div>
+    </header>
 
-    <!-- Global/Context Banner for duplicate notification -->
-    <div v-if="errorMessage && !isModalOpen" class="error-banner">
-      {{ errorMessage }}
-    </div>
-
-    <!-- Summary view -->
-    <div v-if="!isModalOpen" class="count-card">
-      <div class="count-display">
-        <span class="count-number">{{ mediaCount }}</span>
-        <span class="count-label">Media in Watchlist</span>
+    <div class="content">
+      <!-- Global/Context Banner for duplicate notification -->
+      <div v-if="errorMessage && !isModalOpen" class="error-banner">
+        {{ errorMessage }}
       </div>
-      <button class="primary-btn" @click="openModal">
-        {{ isImdbPage ? '+ from IMDb' : '+ Media' }}
-      </button>
-    </div>
+
+      <!-- Summary view -->
+      <div v-if="!isModalOpen" class="count-card accent">
+        <div class="count-display">
+          <span class="count-label">Media in Watchlist</span>
+          <span class="count-number">{{ mediaCount }}</span>
+        </div>
+        <button class="primary-btn" @click="openModal">
+          {{ isImdbPage ? '+ from IMDb' : '+ Media' }}
+        </button>
+      </div>
 
     <!-- Add-media view -->
     <div v-else class="add-panel">
@@ -422,14 +552,22 @@ const handleAddMediaSubmit = async () => {
         <div class="form-group">
           <label id="type-label">Type</label>
           <div class="segmented" role="group" aria-labelledby="type-label">
-            <label class="segment">
-              <input v-model="formType" type="radio" value="show" />
-              <span>TV Show</span>
-            </label>
-            <label class="segment">
-              <input v-model="formType" type="radio" value="movie" />
-              <span>Movie</span>
-            </label>
+            <button
+              type="button"
+              class="segment-btn"
+              :class="{ active: formType === 'show' }"
+              @click="formType = 'show'"
+            >
+              Show
+            </button>
+            <button
+              type="button"
+              class="segment-btn"
+              :class="{ active: formType === 'movie' }"
+              @click="formType = 'movie'"
+            >
+              Movie
+            </button>
           </div>
         </div>
 
@@ -486,22 +624,66 @@ const handleAddMediaSubmit = async () => {
                   type="number"
                   min="1"
                   :max="formTotalSeasons ? Number(formTotalSeasons) : undefined"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel($event, formSeason, (n) => (formSeason = n), {
+                      min: 1,
+                      max: formTotalSeasons ? Number(formTotalSeasons) : undefined,
+                    })
+                  "
                 />
               </div>
               <div class="form-group">
                 <label for="episode-input">Episode</label>
-                <input id="episode-input" v-model.number="formEpisode" type="number" min="1" />
+                <input
+                  id="episode-input"
+                  v-model.number="formEpisode"
+                  type="number"
+                  min="1"
+                  :max="formTotalEpisodes ? Number(formTotalEpisodes) : undefined"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel($event, formEpisode, (n) => (formEpisode = n), {
+                      min: 1,
+                      max: formTotalEpisodes ? Number(formTotalEpisodes) : undefined,
+                    })
+                  "
+                />
               </div>
             </div>
-            <div class="form-group">
-              <label for="total-seasons-input">Total Seasons (optional)</label>
-              <input
-                id="total-seasons-input"
-                v-model="formTotalSeasons"
-                type="number"
-                min="1"
-                placeholder="e.g. 5"
-              />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="total-seasons-input">Total Seasons (optional)</label>
+                <input
+                  id="total-seasons-input"
+                  v-model="formTotalSeasons"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 5"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel($event, formTotalSeasons, (n) => (formTotalSeasons = String(n)), {
+                      min: 1,
+                    })
+                  "
+                />
+              </div>
+              <div class="form-group">
+                <label for="total-episodes-input">Total Episodes (optional)</label>
+                <input
+                  id="total-episodes-input"
+                  v-model="formTotalEpisodes"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 10"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel($event, formTotalEpisodes, (n) => (formTotalEpisodes = String(n)), {
+                      min: 1,
+                    })
+                  "
+                />
+              </div>
             </div>
           </template>
 
@@ -509,7 +691,20 @@ const handleAddMediaSubmit = async () => {
             <div class="form-row">
               <div class="form-group">
                 <label for="minutes-input">Minutes Watched</label>
-                <input id="minutes-input" v-model.number="formMinutes" type="number" min="0" />
+                <input
+                  id="minutes-input"
+                  v-model.number="formMinutes"
+                  type="number"
+                  min="0"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel($event, formMinutes, (n) => (formMinutes = n), {
+                      min: 0,
+                      max: formRuntimeMinutes ? Number(formRuntimeMinutes) : undefined,
+                      step: 5,
+                    })
+                  "
+                />
               </div>
               <div class="form-group">
                 <label for="runtime-minutes-input">Runtime (optional)</label>
@@ -519,6 +714,15 @@ const handleAddMediaSubmit = async () => {
                   type="number"
                   min="1"
                   placeholder="e.g. 120"
+                  title="Focus, then scroll to adjust"
+                  @wheel.prevent="
+                    handleNumberWheel(
+                      $event,
+                      formRuntimeMinutes,
+                      (n) => (formRuntimeMinutes = String(n)),
+                      { min: 1, step: 5 },
+                    )
+                  "
                 />
               </div>
             </div>
@@ -531,6 +735,13 @@ const handleAddMediaSubmit = async () => {
                 min="1900"
                 max="2100"
                 placeholder="e.g. 2023"
+                title="Focus, then scroll to adjust"
+                @wheel.prevent="
+                  handleNumberWheel($event, formReleaseYear, (n) => (formReleaseYear = String(n)), {
+                    min: 1900,
+                    max: 2100,
+                  })
+                "
               />
             </div>
           </template>
@@ -543,6 +754,7 @@ const handleAddMediaSubmit = async () => {
           <button type="submit" class="primary-btn">Save Item</button>
         </div>
       </form>
+    </div>
     </div>
 
     <!-- Footer -->
@@ -596,8 +808,8 @@ const handleAddMediaSubmit = async () => {
   --error-text: #c0392b;
   --shadow: rgba(0, 0, 0, 0.05);
 
-  --show-text: #0284c7;
-  --movie-text: #db2777;
+  --show-text: #004f77;
+  --movie-text: #8c1a4d;
   color-scheme: light;
 }
 
@@ -607,51 +819,58 @@ body {
   padding: 0;
   width: 320px;
   overflow: hidden;
+  scrollbar-width: none;
   background: var(--bg);
   color: var(--text-primary);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 </style>
 
 <style scoped>
-main {
+.popup-root {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   width: 320px;
-  padding: 0.75rem;
+  min-height: 100%;
+  padding: 0;
   background-color: var(--bg);
   color: var(--text-primary);
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   transition: background-color 0.15s ease, color 0.15s ease;
   overflow: hidden;
 }
 
-main * {
+.popup-root * {
   box-sizing: border-box;
 }
 
-.header-row {
+.navbar {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
+  align-items: center;
   gap: 0.5rem;
-  text-align: left;
+  padding: 0.75rem 0.85rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
 }
 
-.header-text {
+.brand {
   min-width: 0;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.5rem;
   flex-shrink: 0;
 }
 
@@ -664,46 +883,64 @@ main * {
   text-align: left;
 }
 
-h3 {
-  color: var(--accent);
-  text-transform: uppercase;
-  font-size: 1.1rem;
+.brand h1 {
+  margin: 0;
+  font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  color: var(--accent);
+  letter-spacing: 0.02em;
   line-height: 1.1;
-  margin: 0 0 0.1rem 0;
   transition: color 0.15s ease;
 }
 
-.title-btn:hover h3 {
+.title-btn:hover h1 {
   color: var(--accent-hover);
 }
 
-p {
+.subtitle {
   color: var(--text-secondary);
-  font-size: 0.74rem;
-  margin: 0 0 0.5rem 0;
+  font-size: 0.72rem;
+  margin: 0.2rem 0 0 0;
+  line-height: 1.3;
 }
 
 .icon-btn {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 50%;
   border: 1px solid var(--border);
-  background: var(--bg-card);
+  background: var(--bg-input);
   color: var(--text-primary);
   cursor: pointer;
   padding: 0;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 .icon-btn:hover {
   border-color: var(--accent);
-  color: var(--accent);
+}
+
+.content {
+  padding: 0.75rem 0.85rem 0.1rem;
+  flex: 1;
+}
+
+.popup-root.is-adding .navbar {
+  padding: 0.55rem 0.75rem;
+}
+
+.popup-root.is-adding .content {
+  flex: none;
+  padding: 0.45rem 0.75rem 0;
+}
+
+.popup-root.is-adding .site-footer {
+  padding: 0.35rem 0 0.45rem;
 }
 
 /* ---------- Summary View ---------- */
@@ -714,10 +951,14 @@ p {
   gap: 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.75rem 0.85rem;
-  margin-bottom: 0.5rem;
-  box-shadow: 0 1px 3px var(--shadow);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 2px 6px var(--shadow);
+  transition: border-color 0.15s ease;
+}
+
+.count-card:hover {
+  border-color: var(--accent);
 }
 
 .count-display {
@@ -727,32 +968,41 @@ p {
 }
 
 .count-number {
-  font-size: 1.6rem;
+  font-size: 1.85rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   line-height: 1;
+  margin-top: 0.2rem;
+}
+
+.count-card.accent .count-number {
+  color: var(--accent);
 }
 
 .count-label {
-  font-size: 0.65rem;
-  color: var(--text-muted);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 0.15rem;
+  letter-spacing: 0.05em;
+  font-weight: 600;
 }
 
-.primary-btn {
-  font-size: 0.78rem;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background-color: var(--accent);
-  color: var(--accent-contrast);
+.primary-btn,
+.secondary-btn {
+  font-size: 0.82rem;
   font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
   cursor: pointer;
   outline: none;
   white-space: nowrap;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.primary-btn {
+  background-color: var(--accent);
+  color: var(--accent-contrast);
+  border: 1px solid var(--accent);
 }
 
 .primary-btn:hover {
@@ -761,19 +1011,15 @@ p {
 }
 
 .secondary-btn {
-  background: transparent;
+  background-color: var(--bg-input);
   color: var(--text-secondary);
-  border: 1px solid transparent;
-  padding: 0.38rem 0.65rem;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  border: 1px solid var(--border);
 }
 
 .secondary-btn:hover {
+  background-color: var(--bg-card);
   color: var(--text-primary);
-  background-color: var(--bg-input);
+  border-color: var(--text-muted);
 }
 
 /* ---------- Add-media View ---------- */
@@ -782,29 +1028,28 @@ p {
   text-align: left;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.7rem;
-  margin-bottom: 0.35rem;
-  box-shadow: 0 1px 3px var(--shadow);
+  border-radius: 12px;
+  padding: 0.55rem 0.7rem 0.6rem;
+  box-shadow: 0 2px 8px var(--shadow);
 }
 
 .add-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
 }
 
 .add-panel-header h4 {
   margin: 0;
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--accent);
 }
 
 .add-panel-header .icon-btn {
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .imdb-auto-badge {
@@ -814,8 +1059,8 @@ p {
   background: var(--accent-soft);
   color: var(--accent);
   border: 1px solid var(--accent);
-  padding: 0.28rem 0.45rem;
-  border-radius: 5px;
+  padding: 0.28rem 0.5rem;
+  border-radius: 8px;
   font-size: 0.68rem;
   font-weight: 600;
   margin-bottom: 0.45rem;
@@ -824,8 +1069,8 @@ p {
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  margin-bottom: 0.45rem;
+  gap: 0.18rem;
+  margin-bottom: 0.38rem;
 }
 
 .dropdown-group {
@@ -835,19 +1080,19 @@ p {
 
 .form-group label {
   font-size: 0.62rem;
-  color: var(--text-secondary);
-  font-weight: 600;
+  color: var(--text-muted);
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .form-group input {
-  padding: 0.32rem 0.48rem;
-  border-radius: 5px;
+  padding: 0.32rem 0.55rem;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-input);
   color: var(--text-primary);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-family: inherit;
   width: 100%;
 }
@@ -859,7 +1104,21 @@ p {
 .form-group input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.form-group input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.form-group input[type='number']:focus {
+  cursor: ns-resize;
+}
+
+.form-group input[type='number']::-webkit-outer-spin-button,
+.form-group input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* Title Auto-Complete Styling */
@@ -875,25 +1134,22 @@ p {
   right: 0;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px var(--shadow);
-  max-height: 140px;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px var(--shadow);
+  max-height: 160px;
   overflow-y: auto;
-  margin-top: 0.15rem;
+  margin-top: 0.25rem;
+  padding: 0.3rem;
 }
 
 .suggestion-item {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.3rem 0.45rem;
+  gap: 0.55rem;
+  padding: 0.4rem 0.5rem;
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
+  border-radius: 6px;
   transition: background-color 0.12s ease;
-}
-
-.suggestion-item:last-child {
-  border-bottom: none;
 }
 
 .suggestion-item:hover {
@@ -901,32 +1157,32 @@ p {
 }
 
 .suggestion-poster {
-  width: 20px;
-  height: 30px;
+  width: 22px;
+  height: 32px;
   object-fit: cover;
-  border-radius: 3px;
+  border-radius: 4px;
   flex-shrink: 0;
 }
 
 .suggestion-poster-placeholder {
-  width: 20px;
-  height: 30px;
+  width: 22px;
+  height: 32px;
   background: var(--bg-input);
   border: 1px dashed var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
   flex-shrink: 0;
 }
 
 .suggestion-info {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.15rem;
   text-align: left;
   min-width: 0;
 }
 
 .suggestion-title {
-  font-size: 0.74rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -937,15 +1193,16 @@ p {
 .suggestion-meta {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 
 .suggestion-meta .badge {
-  font-size: 0.52rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
   font-weight: 800;
-  padding: 0.08rem 0.3rem;
-  border-radius: 3px;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
   background: var(--bg-input);
   border: 1px solid var(--border);
 }
@@ -959,11 +1216,11 @@ p {
 }
 
 .suggestion-meta .year {
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
 }
 
-/* Custom Interactive Select */
+/* Custom Interactive Select — matches dashboard */
 .select {
   cursor: pointer;
   position: relative;
@@ -971,22 +1228,32 @@ p {
   width: 100%;
 }
 
+.select::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 6px;
+}
+
 .selected {
   background-color: var(--bg-input);
   border: 1px solid var(--border);
-  padding: 0.32rem 0.48rem;
-  border-radius: 5px;
-  font-size: 0.75rem;
+  padding: 0.32rem 0.55rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.4rem;
   transition: border-color 0.2s ease;
 }
 
 .arrow {
-  height: 7px;
-  width: 10px;
+  height: 8px;
+  width: 12px;
   transform: rotate(-90deg);
   fill: var(--text-primary);
   transition: transform 200ms ease;
@@ -995,11 +1262,11 @@ p {
 .options {
   display: flex;
   flex-direction: column;
-  border-radius: 6px;
-  padding: 0.25rem;
+  border-radius: 8px;
+  padding: 0.3rem;
   background-color: var(--bg-card);
   border: 1px solid var(--border);
-  box-shadow: 0 4px 12px var(--shadow);
+  box-shadow: 0 4px 14px var(--shadow);
   position: absolute;
   top: 100%;
   left: 0;
@@ -1024,10 +1291,10 @@ p {
 }
 
 .option-item {
-  border-radius: 4px;
-  padding: 0.28rem 0.45rem;
+  border-radius: 5px;
+  padding: 0.4rem 0.55rem;
   transition: background-color 150ms ease, color 150ms ease;
-  font-size: 0.74rem;
+  font-size: 0.82rem;
   font-weight: 500;
   color: var(--text-primary);
   cursor: pointer;
@@ -1046,8 +1313,8 @@ p {
 
 .form-row {
   display: flex;
-  gap: 0.4rem;
-  margin-bottom: 0.45rem;
+  gap: 0.45rem;
+  margin-bottom: 0.38rem;
 }
 
 .form-row .form-group {
@@ -1056,82 +1323,83 @@ p {
 }
 
 .field-section {
-  padding-top: 0.45rem;
-  margin-top: 0.45rem;
+  padding-top: 0.38rem;
+  margin-top: 0.05rem;
   border-top: 1px solid var(--border);
 }
 
 .section-label {
-  margin: 0 0 0.35rem 0;
-  font-size: 0.58rem;
+  margin: 0 0 0.32rem 0;
+  font-size: 0.62rem;
   color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
 }
 
 .segmented {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.12rem;
-  gap: 0.1rem;
+  border-radius: 8px;
+  padding: 0.18rem;
+  gap: 0.18rem;
+  height: 2.05rem;
+  box-sizing: border-box;
+  align-items: center;
 }
 
-.segment {
-  position: relative;
-  margin: 0;
-  border-radius: 999px;
-}
-
-.segment input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  margin: 0;
-  cursor: pointer;
-}
-
-.segment span {
-  display: block;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 500;
+.segment-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
   color: var(--text-secondary);
-  white-space: nowrap;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  height: 100%;
+  font-family: inherit;
 }
 
-.segment input:checked + span {
+.segment-btn.active {
   background: var(--accent);
   color: var(--accent-contrast);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.4rem;
-  margin-top: 0.55rem;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.popup-root.is-adding .primary-btn,
+.popup-root.is-adding .secondary-btn {
+  font-size: 0.75rem;
+  padding: 0.35rem 0.75rem;
 }
 
 .error-banner {
   background: var(--error-bg);
   color: var(--error-text);
-  padding: 0.3rem 0.45rem;
-  border-radius: 5px;
-  font-size: 0.68rem;
-  margin-bottom: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  margin-bottom: 0.65rem;
   text-align: center;
 }
 
 .site-footer {
-  padding: 1rem 0;
+  padding: 0.65rem 0 0.8rem;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .footer-link {

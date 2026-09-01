@@ -11,6 +11,17 @@ export interface TMDBSuggestion {
   posterPath?: string
 }
 
+export interface TMDBSeasonInfo {
+  seasonNumber: number
+  episodeCount: number
+}
+
+export interface TMDBShowInfo {
+  totalSeasons: number
+  seasons: TMDBSeasonInfo[]
+  lastSeason: TMDBSeasonInfo
+}
+
 export interface TMDBExternalFindResult {
   title: string
   mediaType: 'show' | 'movie'
@@ -19,6 +30,23 @@ export interface TMDBExternalFindResult {
   totalSeasons?: number
   runtimeMinutes?: number
   releaseYear?: number
+  showInfo?: TMDBShowInfo
+}
+
+export interface TMDBTvDetails {
+  number_of_seasons?: number
+  seasons?: { season_number?: number; episode_count?: number }[]
+}
+
+export interface TMDBMovieDetails {
+  runtime?: number
+}
+
+export type CompletedShowProgress = {
+  currentSeason: number
+  currentEpisode: number
+  totalSeasons: number
+  totalEpisodes: number
 }
 
 const defaultHeaders = {
@@ -65,7 +93,12 @@ export const searchTMDB = async (query: string): Promise<TMDBSuggestion[]> => {
 /**
  * Fetch detailed show/movie details (seasons or runtime)
  */
-export const getTMDBDetails = async (id: number, mediaType: 'show' | 'movie') => {
+export async function getTMDBDetails(id: number, mediaType: 'show'): Promise<TMDBTvDetails | null>
+export async function getTMDBDetails(id: number, mediaType: 'movie'): Promise<TMDBMovieDetails | null>
+export async function getTMDBDetails(
+  id: number,
+  mediaType: 'show' | 'movie'
+): Promise<TMDBTvDetails | TMDBMovieDetails | null> {
   const endpoint = mediaType === 'show' ? `/tv/${id}` : `/movie/${id}`
   const res = await fetch(`${TMDB_BASE_URL}${endpoint}`, {
     headers: defaultHeaders
@@ -73,6 +106,106 @@ export const getTMDBDetails = async (id: number, mediaType: 'show' | 'movie') =>
 
   if (!res.ok) return null
   return res.json()
+}
+
+export const parseTMDBShowInfo = (details: TMDBTvDetails | null): TMDBShowInfo | null => {
+  if (!details) return null
+
+  const seasons: TMDBSeasonInfo[] = (details.seasons ?? [])
+    .filter((s): s is { season_number: number; episode_count?: number } =>
+      typeof s.season_number === 'number' && s.season_number > 0
+    )
+    .map((s) => ({
+      seasonNumber: s.season_number,
+      episodeCount: typeof s.episode_count === 'number' ? s.episode_count : 0,
+    }))
+    .sort((a, b) => a.seasonNumber - b.seasonNumber)
+
+  const withEpisodes = seasons.filter((s) => s.episodeCount > 0)
+  const lastSeason = (withEpisodes.length > 0 ? withEpisodes : seasons).at(-1)
+  const totalSeasons =
+    typeof details.number_of_seasons === 'number' && details.number_of_seasons > 0
+      ? details.number_of_seasons
+      : lastSeason?.seasonNumber
+
+  if (!totalSeasons) return null
+
+  return {
+    totalSeasons,
+    seasons,
+    lastSeason: lastSeason
+      ? { ...lastSeason, episodeCount: Math.max(1, lastSeason.episodeCount) }
+      : { seasonNumber: totalSeasons, episodeCount: 1 },
+  }
+}
+
+export const getTMDBShowInfo = async (id: number): Promise<TMDBShowInfo | null> => {
+  const details = await getTMDBDetails(id, 'show')
+  return parseTMDBShowInfo(details)
+}
+
+export const getEpisodeCountForSeason = (
+  info: TMDBShowInfo,
+  seasonNumber: number
+): number | undefined => {
+  return info.seasons.find((s) => s.seasonNumber === seasonNumber)?.episodeCount
+}
+
+export const completedProgressFromShowInfo = (info: TMDBShowInfo): CompletedShowProgress => ({
+  currentSeason: info.lastSeason.seasonNumber,
+  currentEpisode: info.lastSeason.episodeCount,
+  totalSeasons: info.totalSeasons,
+  totalEpisodes: info.lastSeason.episodeCount,
+})
+
+export const resolveCompletedShowProgress = async (
+  tmdbId: number | undefined,
+  fallback: {
+    totalSeasons?: number
+    totalEpisodes?: number
+    currentSeason: number
+    currentEpisode: number
+  }
+): Promise<CompletedShowProgress | null> => {
+  if (tmdbId) {
+    const info = await getTMDBShowInfo(tmdbId)
+    if (info) return completedProgressFromShowInfo(info)
+  }
+
+  const season = fallback.totalSeasons && fallback.totalSeasons > 0
+    ? fallback.totalSeasons
+    : fallback.currentSeason
+  const episode = fallback.totalEpisodes && fallback.totalEpisodes > 0
+    ? fallback.totalEpisodes
+    : fallback.currentEpisode
+
+  if (!season) return null
+
+  return {
+    currentSeason: season,
+    currentEpisode: episode || 1,
+    totalSeasons: fallback.totalSeasons ?? season,
+    totalEpisodes: fallback.totalEpisodes ?? episode ?? 1,
+  }
+}
+
+export const resolveCompletedMovieProgress = async (
+  tmdbId: number | undefined,
+  fallback: { runtimeMinutes?: number; currentMinutes: number }
+): Promise<{ currentMinutes: number; runtimeMinutes?: number }> => {
+  let runtime = fallback.runtimeMinutes
+
+  if ((!runtime || runtime <= 0) && tmdbId) {
+    const details = await getTMDBDetails(tmdbId, 'movie')
+    if (details?.runtime && details.runtime > 0) {
+      runtime = details.runtime
+    }
+  }
+
+  return {
+    currentMinutes: runtime && runtime > 0 ? runtime : fallback.currentMinutes,
+    runtimeMinutes: runtime,
+  }
 }
 
 /**
@@ -97,6 +230,7 @@ export const fetchTmdbByImdbId = async (
     if (data.tv_results && data.tv_results.length > 0) {
       const show = data.tv_results[0]
       const details = await getTMDBDetails(show.id, 'show')
+      const showInfo = parseTMDBShowInfo(details)
 
       return {
         title: show.name || show.original_name,
@@ -105,10 +239,11 @@ export const fetchTmdbByImdbId = async (
         posterPath: show.poster_path
           ? `${TMDB_IMAGE_BASE_URL}${show.poster_path}`
           : undefined,
-        totalSeasons: details?.number_of_seasons,
+        totalSeasons: showInfo?.totalSeasons ?? details?.number_of_seasons,
         releaseYear: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
-          : undefined
+          : undefined,
+        showInfo: showInfo ?? undefined,
       }
     }
 

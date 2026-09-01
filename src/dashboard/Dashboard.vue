@@ -21,6 +21,14 @@ import {
 import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
 import SettingsModal from './Settings.vue'
+import {
+  getTMDBShowInfo,
+  getEpisodeCountForSeason,
+  completedProgressFromShowInfo,
+  resolveCompletedShowProgress,
+  resolveCompletedMovieProgress,
+  TMDBShowInfo,
+} from '../services/tmdb'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -37,6 +45,15 @@ const statusFilter = ref<MediaStatus | 'all'>('all')
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
 const supportLink = ref('https://buymeacoffee.com/v1c3nt')
+const showInfoCache = new Map<number, TMDBShowInfo>()
+
+const loadShowInfo = async (tmdbId: number): Promise<TMDBShowInfo | null> => {
+  const cached = showInfoCache.get(tmdbId)
+  if (cached) return cached
+  const info = await getTMDBShowInfo(tmdbId)
+  if (info) showInfoCache.set(tmdbId, info)
+  return info
+}
 
 const loadMedia = async () => {
   mediaList.value = await getAllMedia()
@@ -120,8 +137,17 @@ const filteredMedia = computed(() => {
 
 // Handlers for Show
 const handleEpisodeChange = async (show: Show, delta: number) => {
-  const nextEpisode = Math.max(1, show.currentEpisode + delta)
-  await updateMedia({ id: show.id, currentEpisode: nextEpisode })
+  let nextEpisode = Math.max(1, show.currentEpisode + delta)
+  if (show.totalEpisodes && show.totalEpisodes > 0) {
+    nextEpisode = Math.min(nextEpisode, show.totalEpisodes)
+  }
+
+  let updatedStatus: MediaStatus = show.status
+  if (nextEpisode < show.currentEpisode && show.status === 'completed') {
+    updatedStatus = 'watching'
+  }
+
+  await updateMedia({ id: show.id, currentEpisode: nextEpisode, status: updatedStatus })
 }
 
 const handleSeasonChange = async (show: Show, delta: number) => {
@@ -131,7 +157,25 @@ const handleSeasonChange = async (show: Show, delta: number) => {
     nextSeason = Math.min(nextSeason, show.totalSeasons)
   }
 
-  await updateMedia({ id: show.id, currentSeason: nextSeason, currentEpisode: 1 })
+  const updates: Partial<Show> & { id: string } = {
+    id: show.id,
+    currentSeason: nextSeason,
+    currentEpisode: 1,
+  }
+
+  if (show.tmdbId) {
+    const info = await loadShowInfo(show.tmdbId)
+    const episodeCount = info ? getEpisodeCountForSeason(info, nextSeason) : undefined
+    if (episodeCount) {
+      updates.totalEpisodes = episodeCount
+    }
+  }
+
+  if (nextSeason < show.currentSeason && show.status === 'completed') {
+    updates.status = 'watching'
+  }
+
+  await updateMedia(updates)
 }
 
 const isTrackableStatus = (status: MediaStatus) => status === 'watching' || status === 'waiting'
@@ -166,7 +210,10 @@ const handleMinutesChange = async (movie: Movie, delta: number) => {
 }
 
 const handleMinutesWheel = (event: WheelEvent, movie: Movie) => {
-  if (document.activeElement !== event.currentTarget) return
+  const root = event.currentTarget as HTMLElement
+  const input = root instanceof HTMLInputElement ? root : root.querySelector('input')
+  if (!input || document.activeElement !== input) return
+  event.preventDefault()
   const delta = event.deltaY < 0 ? 5 : -5
   handleMinutesChange(movie, delta)
 }
@@ -204,6 +251,23 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
       updates.notifyEnabled = false
     }
 
+    if (newStatus === 'completed') {
+      let progress = null
+      if (item.tmdbId) {
+        const info = await loadShowInfo(item.tmdbId)
+        if (info) progress = completedProgressFromShowInfo(info)
+      }
+      if (!progress) {
+        progress = await resolveCompletedShowProgress(undefined, item)
+      }
+      if (progress) {
+        updates.currentSeason = progress.currentSeason
+        updates.currentEpisode = progress.currentEpisode
+        updates.totalSeasons = progress.totalSeasons
+        updates.totalEpisodes = progress.totalEpisodes
+      }
+    }
+
     await updateMedia(updates)
     return
   }
@@ -212,6 +276,15 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
   if (!isNotifyableStatus(newStatus)) {
     updates.notifyEnabled = false
   }
+
+  if (newStatus === 'completed') {
+    const progress = await resolveCompletedMovieProgress(item.tmdbId, item)
+    updates.currentMinutes = progress.currentMinutes
+    if (progress.runtimeMinutes) {
+      updates.runtimeMinutes = progress.runtimeMinutes
+    }
+  }
+
   await updateMedia(updates)
 }
 
@@ -508,11 +581,18 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
               <div class="progress-box">
                 <div class="progress-info">
                   <span class="progress-label">Episode</span>
-                  <span class="progress-val">{{ item.currentEpisode }}</span>
+                  <span class="progress-val">
+                    {{ item.currentEpisode }}
+                    <span v-if="item.totalEpisodes" class="total-val">/ {{ item.totalEpisodes }}</span>
+                  </span>
                 </div>
                 <div class="btn-group">
                   <button class="stepper-btn" :disabled="item.currentEpisode <= 1" @click="handleEpisodeChange(item, -1)">-</button>
-                  <button class="stepper-btn" @click="handleEpisodeChange(item, 1)">+</button>
+                  <button
+                    class="stepper-btn"
+                    :disabled="!!item.totalEpisodes && item.currentEpisode >= item.totalEpisodes"
+                    @click="handleEpisodeChange(item, 1)"
+                  >+</button>
                 </div>
               </div>
             </div>
@@ -524,15 +604,20 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
                   <span class="progress-label">Minutes Watched</span>
                 </div>
                 
-                <div class="input-wrapper">
+                <div
+                  class="input-wrapper"
+                  title="Focus, then scroll to adjust"
+                  @wheel="handleMinutesWheel($event, item)"
+                >
                   <input
                     type="number"
                     min="0"
                     :max="item.runtimeMinutes || undefined"
                     :value="item.currentMinutes"
                     class="minutes-scroll-input"
+                    step="5"
                     @input="handleMinutesInput($event, item)"
-                    @wheel.prevent="handleMinutesWheel($event, item)"
+                    @wheel.prevent.stop="handleMinutesWheel($event, item)"
                   />
                   <span v-if="item.runtimeMinutes" class="runtime-suffix">/ {{ item.runtimeMinutes }}m</span>
                   <span v-else class="runtime-suffix">m</span>
@@ -1262,6 +1347,10 @@ html, body {
   border-color: var(--accent);
 }
 
+.input-wrapper:focus-within .minutes-scroll-input {
+  cursor: ns-resize;
+}
+
 .minutes-scroll-input {
   width: 3rem;
   background: transparent;
@@ -1274,7 +1363,8 @@ html, body {
   padding: 0;
   margin: 0;
   line-height: 1;
-  -appearance: textfield;
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
 .minutes-scroll-input::-webkit-outer-spin-button,

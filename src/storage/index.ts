@@ -174,7 +174,7 @@ export async function queryMedia(options: MediaQueryOptions = {}): Promise<Track
 // ==========================================
 
 export type AddMediaInput =
-  | ({ mediaType: 'show'; currentSeason: number; currentEpisode: number; totalSeasons?: number } & BaseAddInput)
+  | ({ mediaType: 'show'; currentSeason: number; currentEpisode: number; totalSeasons?: number; totalEpisodes?: number } & BaseAddInput)
   | ({ mediaType: 'movie'; currentMinutes: number; runtimeMinutes?: number; releaseYear?: number } & BaseAddInput);
 
 interface BaseAddInput {
@@ -241,6 +241,7 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
       currentSeason: input.currentSeason ?? 1,
       currentEpisode: input.currentEpisode ?? 1,
       totalSeasons: input.totalSeasons,
+      totalEpisodes: input.totalEpisodes,
       tracked: false,
       notifyEnabled: false,
     };

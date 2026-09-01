@@ -27,6 +27,8 @@ export interface Show extends BaseMedia {
   currentSeason: number;
   currentEpisode: number;
   totalSeasons?: number;
+  /** Episode count of the current season */
+  totalEpisodes?: number;
   /** When true, background checks TMDB for new seasons */
   tracked?: boolean;
 }
