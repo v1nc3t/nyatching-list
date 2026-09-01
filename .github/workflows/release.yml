@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VITE_TMDB_READ_TOKEN: ${{ secrets.VITE_TMDB_READ_TOKEN }}
 
     steps:
       # 1. Checkout repository code
@@ -27,6 +29,13 @@ jobs:
       # 3. Install dependencies
       - name: Install Dependencies
         run: npm ci
+
+      - name: Verify TMDB token
+        run: |
+          if [ -z "$VITE_TMDB_READ_TOKEN" ]; then
+            echo "Set the VITE_TMDB_READ_TOKEN repository secret before releasing."
+            exit 1
+          fi
 
       # 4. Build Chrome Version
       - name: Build Chrome Extension
@@ -45,7 +54,7 @@ jobs:
       # 6. Create Source Code Zip for AMO Submission
       - name: Create Source Code Zip
         run: |
-          zip -r source-code.zip . -x "node_modules/*" -x ".git/*" -x "build/*" -x "build-firefox/*" -x "*.zip"
+          zip -r source-code.zip . -x "node_modules/*" -x ".git/*" -x "build/*" -x "build-firefox/*" -x "*.zip" -x ".env" -x ".env.local"
 
       # 7. Create GitHub Release and Upload Artifacts
       - name: Create Release

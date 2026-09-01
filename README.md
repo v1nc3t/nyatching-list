@@ -104,6 +104,12 @@ In settings you can control:
 
 ## Development
 
+Title search and season checks need a TMDB API Read Access Token. Copy the example env file and add yours from [TMDB API settings](https://www.themoviedb.org/settings/api):
+
+```bash
+cp .env.example .env
+```
+
 ```bash
 npm install
 npm run dev          # Chrome (HMR via Vite)
@@ -124,6 +130,8 @@ npm run build:firefox  # → build-firefox/
 ## Release Process
 
 This repository uses GitHub Actions to automatically build and release extension packages.
+
+Releases inject `VITE_TMDB_READ_TOKEN` from a GitHub Actions repository secret of the same name. Set that secret once under **Settings → Secrets and variables → Actions**.
 
 To cut a new release:
 

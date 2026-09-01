@@ -1,4 +1,4 @@
-import { defineConfig, Plugin } from 'vite'
+import { defineConfig, loadEnv, Plugin } from 'vite'
 import { crx } from '@crxjs/vite-plugin'
 import vue from '@vitejs/plugin-vue'
 import manifest from './src/manifest.ts'
@@ -62,6 +62,13 @@ const cleanFirefoxManifest = (): Plugin => {
 }
 
 export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+  if (!env.VITE_TMDB_READ_TOKEN) {
+    throw new Error(
+      'Missing VITE_TMDB_READ_TOKEN. Copy .env.example to .env and add your TMDB read access token.',
+    )
+  }
+
   return {
     define: {
       '__LIVE_RELOAD__': true,

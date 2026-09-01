@@ -1,5 +1,4 @@
-// Replace with your actual TMDB Bearer Token from https://www.themoviedb.org/settings/api
-const TMDB_READ_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJhNGFjMjQyNTcxYzIzMjg5YzNiOWEzYzI5NWExZjEzMyIsIm5iZiI6MTc4NjYxNjA3MS45OTUwMDAxLCJzdWIiOiI2YTdkOTkwNzFiNmQ5ZjIzM2ZjODkzNzkiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.78O8ELoZa7jOxxr46ta_DGay39OzjvEjBfT0VwJdbWM'
+const TMDB_READ_TOKEN = import.meta.env.VITE_TMDB_READ_TOKEN
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w185'
 
