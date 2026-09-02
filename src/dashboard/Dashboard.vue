@@ -21,6 +21,7 @@ import {
 import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
 import SettingsModal from './Settings.vue'
+import WatchLinkModal from './WatchLinkModal.vue'
 import {
   getTMDBShowInfo,
   getEpisodeCountForSeason,
@@ -37,6 +38,7 @@ const { theme, toggleTheme } = useTheme()
 const isSettingsOpen = ref(false)
 const isNotificationsOpen = ref(false)
 const notificationLogs = ref<NotificationItem[]>([])
+const linkEditItem = ref<TrackedMedia | null>(null)
 
 // Data State
 const mediaList = ref<TrackedMedia[]>([])
@@ -372,6 +374,7 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
 
         <!-- Settings Modal Portal -->
         <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" />
+        <WatchLinkModal v-if="linkEditItem" :item="linkEditItem" @close="linkEditItem = null" />
       </div>
     </header>
 
@@ -539,22 +542,32 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
               </div>
             </div>
 
-            <h3 class="card-title">
-              <a v-if="item.watchingUrl" :href="item.watchingUrl" target="_blank" rel="noopener noreferrer">
-                {{ item.title }}
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="link-icon">
-                  <path
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"
-                  />
-                </svg>
-              </a>
-              <span v-else>{{ item.title }}</span>
-            </h3>
+            <div class="card-title-block">
+              <h3 class="card-title">
+                <a v-if="item.watchingUrl" :href="item.watchingUrl" target="_blank" rel="noopener noreferrer">
+                  {{ item.title }}
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="link-icon">
+                    <path
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"
+                    />
+                  </svg>
+                </a>
+                <span v-else>{{ item.title }}</span>
+              </h3>
+              <button
+                type="button"
+                class="link-badge"
+                title="Edit watch link"
+                @click="linkEditItem = item"
+              >
+                Edit Link
+              </button>
+            </div>
           </div>
 
           <div class="card-bottom">
@@ -1211,7 +1224,8 @@ html, body {
   margin-bottom: 0.75rem;
 }
 
-.type-badge {
+.type-badge,
+.link-badge {
   font-size: 0.68rem;
   text-transform: uppercase;
   padding: 0.25rem 0.6rem;
@@ -1220,7 +1234,20 @@ html, body {
   letter-spacing: 0.05em;
   background-color: var(--bg-input);
   border: 1px solid var(--border);
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.link-badge {
+  margin: 0;
+  font-family: inherit;
+  line-height: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.link-badge:hover {
+  color: var(--accent-hover);
+  border-color: var(--accent);
 }
 
 .type-badge.show {
@@ -1246,7 +1273,7 @@ html, body {
 /* Poster Container & Card Header */
 .card-header-main {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0.85rem;
   margin-bottom: 1rem;
 }
@@ -1281,6 +1308,21 @@ html, body {
 
 .poster-icon {
   color: var(--text-muted);
+}
+
+.card-title-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1;
+  height: 76px;
+}
+
+.card-title-block .link-badge {
+  margin-top: auto;
+  flex-shrink: 0;
 }
 
 .card-title {
