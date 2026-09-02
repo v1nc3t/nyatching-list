@@ -297,6 +297,27 @@ const handleDelete = async (id: string) => {
 }
 
 const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).toUpperCase() + s.slice(1))
+
+const startTitleMarquee = (event: Event) => {
+  const marquee = event.currentTarget as HTMLElement
+  const track = marquee.querySelector('.title-track') as HTMLElement | null
+  if (!track) return
+
+  const overflow = track.scrollWidth - marquee.clientWidth
+  if (overflow <= 1) {
+    marquee.classList.remove('is-overflowing')
+    return
+  }
+
+  marquee.style.setProperty('--title-shift', `-${overflow}px`)
+  marquee.style.setProperty('--title-duration', `${Math.min(10, Math.max(2.5, overflow / 45))}s`)
+  marquee.classList.add('is-overflowing')
+}
+
+const stopTitleMarquee = (event: Event) => {
+  const marquee = event.currentTarget as HTMLElement
+  marquee.classList.remove('is-overflowing')
+}
 </script>
 
 <template>
@@ -544,8 +565,20 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
 
             <div class="card-title-block">
               <h3 class="card-title">
-                <a v-if="item.watchingUrl" :href="item.watchingUrl" target="_blank" rel="noopener noreferrer">
-                  {{ item.title }}
+                <a
+                  v-if="item.watchingUrl"
+                  class="card-title-link"
+                  :href="item.watchingUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span
+                    class="title-marquee"
+                    @mouseenter="startTitleMarquee"
+                    @mouseleave="stopTitleMarquee"
+                  >
+                    <span class="title-track">{{ item.title }}</span>
+                  </span>
                   <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="link-icon">
                     <path
                       fill="none"
@@ -557,7 +590,14 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
                     />
                   </svg>
                 </a>
-                <span v-else>{{ item.title }}</span>
+                <span
+                  v-else
+                  class="title-marquee"
+                  @mouseenter="startTitleMarquee"
+                  @mouseleave="stopTitleMarquee"
+                >
+                  <span class="title-track">{{ item.title }}</span>
+                </span>
               </h3>
               <button
                 type="button"
@@ -1052,7 +1092,7 @@ html, body {
 }
 
 .content {
-  max-width: 1250px;
+  max-width: 1375px;
   width: 100%;
   box-sizing: border-box;
   margin: 0 auto;
@@ -1323,24 +1363,66 @@ html, body {
 .card-title-block .link-badge {
   margin-top: auto;
   flex-shrink: 0;
+  padding: 0.12rem 0.4rem;
 }
 
 .card-title {
   margin: 0;
+  padding-top: 8%;
+  width: 100%;
+  min-width: 0;
   font-size: 1.05rem;
   font-weight: 600;
   line-height: 1.3;
 }
 
-.card-title a {
-  color: var(--text-primary);
-  text-decoration: none;
-  display: inline-flex;
+.card-title-link {
+  display: flex;
   align-items: center;
   gap: 0.35rem;
+  min-width: 0;
+  width: 100%;
+  color: var(--text-primary);
+  text-decoration: none;
 }
 
-.card-title a:hover { color: var(--accent); }
+.card-title-link:hover {
+  color: var(--accent);
+}
+
+.title-marquee {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.title-track {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.title-marquee.is-overflowing .title-track {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: title-carousel var(--title-duration, 4s) linear infinite alternate;
+}
+
+@keyframes title-carousel {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--title-shift, 0px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-marquee.is-overflowing .title-track {
+    animation: none;
+  }
+}
 
 .link-icon {
   flex-shrink: 0;
