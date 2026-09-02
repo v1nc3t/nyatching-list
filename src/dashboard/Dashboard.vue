@@ -21,6 +21,7 @@ import {
 import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
 import SettingsModal from './Settings.vue'
+import WatchLinkModal from './WatchLinkModal.vue'
 import {
   getTMDBShowInfo,
   getEpisodeCountForSeason,
@@ -37,6 +38,7 @@ const { theme, toggleTheme } = useTheme()
 const isSettingsOpen = ref(false)
 const isNotificationsOpen = ref(false)
 const notificationLogs = ref<NotificationItem[]>([])
+const linkEditItem = ref<TrackedMedia | null>(null)
 
 // Data State
 const mediaList = ref<TrackedMedia[]>([])
@@ -295,6 +297,27 @@ const handleDelete = async (id: string) => {
 }
 
 const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).toUpperCase() + s.slice(1))
+
+const startTitleMarquee = (event: Event) => {
+  const marquee = event.currentTarget as HTMLElement
+  const track = marquee.querySelector('.title-track') as HTMLElement | null
+  if (!track) return
+
+  const overflow = track.scrollWidth - marquee.clientWidth
+  if (overflow <= 1) {
+    marquee.classList.remove('is-overflowing')
+    return
+  }
+
+  marquee.style.setProperty('--title-shift', `-${overflow}px`)
+  marquee.style.setProperty('--title-duration', `${Math.min(10, Math.max(2.5, overflow / 45))}s`)
+  marquee.classList.add('is-overflowing')
+}
+
+const stopTitleMarquee = (event: Event) => {
+  const marquee = event.currentTarget as HTMLElement
+  marquee.classList.remove('is-overflowing')
+}
 </script>
 
 <template>
@@ -372,6 +395,7 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
 
         <!-- Settings Modal Portal -->
         <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" />
+        <WatchLinkModal v-if="linkEditItem" :item="linkEditItem" @close="linkEditItem = null" />
       </div>
     </header>
 
@@ -539,22 +563,51 @@ const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).
               </div>
             </div>
 
-            <h3 class="card-title">
-              <a v-if="item.watchingUrl" :href="item.watchingUrl" target="_blank" rel="noopener noreferrer">
-                {{ item.title }}
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="link-icon">
-                  <path
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"
-                  />
-                </svg>
-              </a>
-              <span v-else>{{ item.title }}</span>
-            </h3>
+            <div class="card-title-block">
+              <h3 class="card-title">
+                <a
+                  v-if="item.watchingUrl"
+                  class="card-title-link"
+                  :href="item.watchingUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span
+                    class="title-marquee"
+                    @mouseenter="startTitleMarquee"
+                    @mouseleave="stopTitleMarquee"
+                  >
+                    <span class="title-track">{{ item.title }}</span>
+                  </span>
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="link-icon">
+                    <path
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"
+                    />
+                  </svg>
+                </a>
+                <span
+                  v-else
+                  class="title-marquee"
+                  @mouseenter="startTitleMarquee"
+                  @mouseleave="stopTitleMarquee"
+                >
+                  <span class="title-track">{{ item.title }}</span>
+                </span>
+              </h3>
+              <button
+                type="button"
+                class="link-badge"
+                title="Edit watch link"
+                @click="linkEditItem = item"
+              >
+                Edit Link
+              </button>
+            </div>
           </div>
 
           <div class="card-bottom">
@@ -1039,7 +1092,7 @@ html, body {
 }
 
 .content {
-  max-width: 1250px;
+  max-width: 1375px;
   width: 100%;
   box-sizing: border-box;
   margin: 0 auto;
@@ -1211,7 +1264,8 @@ html, body {
   margin-bottom: 0.75rem;
 }
 
-.type-badge {
+.type-badge,
+.link-badge {
   font-size: 0.68rem;
   text-transform: uppercase;
   padding: 0.25rem 0.6rem;
@@ -1220,7 +1274,20 @@ html, body {
   letter-spacing: 0.05em;
   background-color: var(--bg-input);
   border: 1px solid var(--border);
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.link-badge {
+  margin: 0;
+  font-family: inherit;
+  line-height: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.link-badge:hover {
+  color: var(--accent-hover);
+  border-color: var(--accent);
 }
 
 .type-badge.show {
@@ -1246,7 +1313,7 @@ html, body {
 /* Poster Container & Card Header */
 .card-header-main {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0.85rem;
   margin-bottom: 1rem;
 }
@@ -1283,22 +1350,79 @@ html, body {
   color: var(--text-muted);
 }
 
+.card-title-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1;
+  height: 76px;
+}
+
+.card-title-block .link-badge {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding: 0.12rem 0.4rem;
+}
+
 .card-title {
   margin: 0;
+  padding-top: 8%;
+  width: 100%;
+  min-width: 0;
   font-size: 1.05rem;
   font-weight: 600;
   line-height: 1.3;
 }
 
-.card-title a {
-  color: var(--text-primary);
-  text-decoration: none;
-  display: inline-flex;
+.card-title-link {
+  display: flex;
   align-items: center;
   gap: 0.35rem;
+  min-width: 0;
+  width: 100%;
+  color: var(--text-primary);
+  text-decoration: none;
 }
 
-.card-title a:hover { color: var(--accent); }
+.card-title-link:hover {
+  color: var(--accent);
+}
+
+.title-marquee {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.title-track {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.title-marquee.is-overflowing .title-track {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: title-carousel var(--title-duration, 4s) linear infinite alternate;
+}
+
+@keyframes title-carousel {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--title-shift, 0px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-marquee.is-overflowing .title-track {
+    animation: none;
+  }
+}
 
 .link-icon {
   flex-shrink: 0;
