@@ -29,7 +29,7 @@ A browser extension that helps you keep track of TV shows and movies you are wat
 - **Search** — Find titles with autocomplete powered by [TMDB](https://www.themoviedb.org/)
 - **IMDb quick add** — Open the extension on an IMDb title page to pre-fill the form
 - **Dashboard** — Browse, filter, and manage your full list in a dedicated tab
-- **Notifications** — Get reminded about new seasons and inactive watching items
+- **Notifications** — Desktop reminders for new episodes or seasons, and when you have not updated a title in a while
 - **Dark / light theme** — Switch themes from the popup or dashboard
 - **Local storage** — Your list stays on your device
 
@@ -50,7 +50,7 @@ If you are already on an IMDb title page, the form can fill itself in for you.
 
 - **Shows** — Update the current season and episode from the dashboard
 - **Movies** — Update how many minutes you have watched
-- **Track toggle** — Mark shows you want checked for new seasons
+- **Notify** — Turn reminders on or off per title on the dashboard card
 
 ### Dashboard
 
@@ -63,11 +63,20 @@ Open the dashboard from the popup to:
 
 ### Notifications
 
+Watching and waiting titles with **Notify** on can send desktop reminders. Click a toast to open your watching link, or the dashboard if none is set.
+
+- **Shows** — New episodes or seasons from TMDB, plus inactivity reminders
+- **Movies** — Inactivity reminders only
+
+TMDB checks run at **12:00 AM**. If the browser was closed at that time, the check runs when it next opens.
+
 In settings you can control:
 
-- How often to check for new seasons
-- How long before you get a reminder for inactive items
-- Turning either reminder off entirely
+- How often to look up shows on TMDB
+- How long without a progress update before an inactivity reminder
+- Turning either reminder off entirely (`Never`)
+
+Inactivity is counted from the last time you changed a show’s episode or a movie’s minutes watched. Completed and dropped titles are not reminded.
 
 ---
 
