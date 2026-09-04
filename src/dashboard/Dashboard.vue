@@ -8,6 +8,7 @@ import {
   NotificationItem,
   isShow,
   isMovie,
+  isNotifyEnabled,
 } from '../types'
 import {
   getAllMedia,
@@ -203,6 +204,10 @@ const handleSeasonChange = async (show: Show, delta: number) => {
 
 const requestReleaseCheck = () => {
   checkShowReleases({ force: true }).catch(() => {})
+}
+
+const handleNotifyToggle = async (show: Show) => {
+  await updateMedia({ id: show.id, notify: !isNotifyEnabled(show) })
 }
 
 // Handlers for Movie
@@ -615,14 +620,27 @@ const stopTitleMarquee = (event: Event) => {
                   <span class="title-track">{{ item.title }}</span>
                 </span>
               </h3>
-              <button
-                type="button"
-                class="link-badge"
-                title="Edit watch link"
-                @click="linkEditItem = item"
-              >
-                Edit Link
-              </button>
+              <div class="title-actions">
+                <button
+                  type="button"
+                  class="link-badge"
+                  title="Edit watch link"
+                  @click="linkEditItem = item"
+                >
+                  Edit Link
+                </button>
+                <button
+                  v-if="isShow(item)"
+                  type="button"
+                  class="link-badge notify-badge"
+                  :class="{ 'is-on': isNotifyEnabled(item), 'is-off': !isNotifyEnabled(item) }"
+                  :aria-pressed="isNotifyEnabled(item)"
+                  :title="isNotifyEnabled(item) ? 'Notifications on' : 'Notifications off'"
+                  @click="handleNotifyToggle(item)"
+                >
+                  Notify
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1320,10 +1338,41 @@ html, body {
   height: 76px;
 }
 
-.card-title-block .link-badge {
+.card-title-block .title-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   margin-top: auto;
   flex-shrink: 0;
+}
+
+.card-title-block .link-badge {
+  margin-top: 0;
+  flex-shrink: 0;
   padding: 0.12rem 0.4rem;
+  font-weight: 600;
+}
+
+.notify-badge.is-on {
+  background-color: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+.notify-badge.is-on:hover {
+  background-color: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-contrast);
+}
+
+.notify-badge.is-off {
+  color: var(--text-muted);
+}
+
+.notify-badge.is-off:hover {
+  color: var(--text-secondary);
+  border-color: var(--text-muted);
 }
 
 .card-title {

@@ -242,6 +242,7 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
       currentEpisode: input.currentEpisode ?? 1,
       totalSeasons: input.totalSeasons,
       totalEpisodes: input.totalEpisodes,
+      notify: true,
     };
   } else {
     newItem = {

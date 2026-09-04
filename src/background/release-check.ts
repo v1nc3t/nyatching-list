@@ -1,5 +1,5 @@
 import { TMDBAiredEpisode, compareAiredEpisodes } from '../services/aired-episode'
-import { Show, TrackedMedia, isShow } from '../types'
+import { Show, TrackedMedia, isShow, isNotifyEnabled } from '../types'
 
 export const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -21,7 +21,12 @@ export interface ReleaseCheckResult {
 }
 
 export const isNotifiableShow = (media: TrackedMedia): media is Show => {
-  return isShow(media) && (media.status === 'watching' || media.status === 'waiting') && Boolean(media.tmdbId)
+  return (
+    isShow(media) &&
+    isNotifyEnabled(media) &&
+    (media.status === 'watching' || media.status === 'waiting') &&
+    Boolean(media.tmdbId)
+  )
 }
 
 export const resolveAlarmPeriodMinutes = (

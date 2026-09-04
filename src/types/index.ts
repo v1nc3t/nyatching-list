@@ -29,6 +29,8 @@ export interface Show extends BaseMedia {
   totalEpisodes?: number;
   lastNotifiedSeason?: number;
   lastNotifiedEpisode?: number;
+  /** When false, this show never sends release notifications. Missing means on. */
+  notify?: boolean;
 }
 
 export interface Movie extends BaseMedia {
@@ -42,6 +44,10 @@ export type TrackedMedia = Show | Movie;
 
 export function isShow(media: TrackedMedia): media is Show {
   return media.mediaType === 'show';
+}
+
+export function isNotifyEnabled(show: Show): boolean {
+  return show.notify !== false;
 }
 
 export function isMovie(media: TrackedMedia): media is Movie {
