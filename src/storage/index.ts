@@ -242,8 +242,6 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
       currentEpisode: input.currentEpisode ?? 1,
       totalSeasons: input.totalSeasons,
       totalEpisodes: input.totalEpisodes,
-      tracked: false,
-      notifyEnabled: false,
     };
   } else {
     newItem = {
@@ -252,7 +250,6 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
       currentMinutes: input.currentMinutes ?? 0,
       runtimeMinutes: input.runtimeMinutes,
       releaseYear: input.releaseYear,
-      notifyEnabled: false,
     };
   }
 

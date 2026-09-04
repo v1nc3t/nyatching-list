@@ -17,9 +17,7 @@ export interface BaseMedia {
   createdAt: number;
   updatedAt: number;
   lastProgressUpdate: number      // Updated whenever episode or minutes change
-  lastStallNotified?: number      // Prevents repeated notification spam
-  /** When true, remind if progress (episodes/minutes) is not updated */
-  notifyEnabled?: boolean;
+  lastStallNotified?: number
 }
 
 export interface Show extends BaseMedia {
@@ -27,10 +25,10 @@ export interface Show extends BaseMedia {
   currentSeason: number;
   currentEpisode: number;
   totalSeasons?: number;
-  /** Episode count of the current season */
+  /** Last released episode of the current season (progress max) */
   totalEpisodes?: number;
-  /** When true, background checks TMDB for new seasons */
-  tracked?: boolean;
+  lastNotifiedSeason?: number;
+  lastNotifiedEpisode?: number;
 }
 
 export interface Movie extends BaseMedia {
@@ -56,6 +54,7 @@ export interface NotificationItem {
   title: string
   message: string
   posterPath?: string
+  watchingUrl?: string
   timestamp: number
   read: boolean
 }

@@ -1,3 +1,14 @@
+import type { TMDBAiredEpisode, TMDBEpisodeRef } from './aired-episode'
+import { airedEpisodeCountForSeason, getLatestAiredEpisode } from './aired-episode'
+
+export type { TMDBEpisodeRef, TMDBAiredEpisode } from './aired-episode'
+export {
+  getLatestAiredEpisode,
+  compareAiredEpisodes,
+  isAiredAheadOfProgress,
+  airedEpisodeCountForSeason,
+} from './aired-episode'
+
 const TMDB_READ_TOKEN = import.meta.env.VITE_TMDB_READ_TOKEN
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3'
 export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w185'
@@ -19,6 +30,7 @@ export interface TMDBShowInfo {
   totalSeasons: number
   seasons: TMDBSeasonInfo[]
   lastSeason: TMDBSeasonInfo
+  latestAired: TMDBAiredEpisode | null
 }
 
 export interface TMDBExternalFindResult {
@@ -35,6 +47,8 @@ export interface TMDBExternalFindResult {
 export interface TMDBTvDetails {
   number_of_seasons?: number
   seasons?: { season_number?: number; episode_count?: number }[]
+  last_episode_to_air?: TMDBEpisodeRef | null
+  next_episode_to_air?: TMDBEpisodeRef | null
 }
 
 export interface TMDBMovieDetails {
@@ -107,6 +121,26 @@ export async function getTMDBDetails(
   return res.json()
 }
 
+export const getTMDBSeasonEpisodes = async (
+  tvId: number,
+  seasonNumber: number
+): Promise<TMDBEpisodeRef[] | null> => {
+  const res = await fetch(`${TMDB_BASE_URL}/tv/${tvId}/season/${seasonNumber}`, {
+    headers: defaultHeaders,
+  })
+
+  if (!res.ok) return null
+
+  const data = await res.json()
+  const episodes = Array.isArray(data.episodes) ? data.episodes : []
+
+  return episodes.map((ep: { air_date?: string; episode_number?: number; season_number?: number }) => ({
+    air_date: ep.air_date,
+    episode_number: ep.episode_number,
+    season_number: typeof ep.season_number === 'number' ? ep.season_number : seasonNumber,
+  }))
+}
+
 export const parseTMDBShowInfo = (details: TMDBTvDetails | null): TMDBShowInfo | null => {
   if (!details) return null
 
@@ -135,6 +169,7 @@ export const parseTMDBShowInfo = (details: TMDBTvDetails | null): TMDBShowInfo |
     lastSeason: lastSeason
       ? { ...lastSeason, episodeCount: Math.max(1, lastSeason.episodeCount) }
       : { seasonNumber: totalSeasons, episodeCount: 1 },
+    latestAired: getLatestAiredEpisode(details),
   }
 }
 
@@ -150,12 +185,36 @@ export const getEpisodeCountForSeason = (
   return info.seasons.find((s) => s.seasonNumber === seasonNumber)?.episodeCount
 }
 
-export const completedProgressFromShowInfo = (info: TMDBShowInfo): CompletedShowProgress => ({
-  currentSeason: info.lastSeason.seasonNumber,
-  currentEpisode: info.lastSeason.episodeCount,
-  totalSeasons: info.totalSeasons,
-  totalEpisodes: info.lastSeason.episodeCount,
-})
+export const getAiredEpisodeCountForSeason = (
+  info: TMDBShowInfo,
+  seasonNumber: number
+): number | undefined => {
+  return airedEpisodeCountForSeason(
+    info.latestAired,
+    seasonNumber,
+    getEpisodeCountForSeason(info, seasonNumber)
+  )
+}
+
+export const completedProgressFromShowInfo = (info: TMDBShowInfo): CompletedShowProgress => {
+  if (info.latestAired) {
+    const aired =
+      getAiredEpisodeCountForSeason(info, info.latestAired.season) ?? info.latestAired.episode
+    return {
+      currentSeason: info.latestAired.season,
+      currentEpisode: info.latestAired.episode,
+      totalSeasons: info.totalSeasons,
+      totalEpisodes: aired,
+    }
+  }
+
+  return {
+    currentSeason: info.lastSeason.seasonNumber,
+    currentEpisode: info.lastSeason.episodeCount,
+    totalSeasons: info.totalSeasons,
+    totalEpisodes: info.lastSeason.episodeCount,
+  }
+}
 
 export const resolveCompletedShowProgress = async (
   tmdbId: number | undefined,
