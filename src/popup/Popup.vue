@@ -50,6 +50,7 @@ const formTotalEpisodes = ref('')
 const formReleaseYear = ref('')
 const selectedPosterPath = ref<string | undefined>(undefined)
 const selectedTmdbId = ref<number | undefined>(undefined)
+const selectedTmdbMediaType = ref<'show' | 'movie' | undefined>(undefined)
 const tmdbShowInfo = ref<TMDBShowInfo | null>(null)
 
 // TMDB Auto-complete State
@@ -94,6 +95,7 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
         formUrl.value = ''
         selectedPosterPath.value = tmdbData.posterPath
         selectedTmdbId.value = tmdbData.tmdbId
+        selectedTmdbMediaType.value = tmdbData.mediaType
 
         if (tmdbData.releaseYear) {
           formReleaseYear.value = tmdbData.releaseYear.toString()
@@ -212,6 +214,37 @@ watch(formType, () => {
   }
 })
 
+const clearTmdbDetails = () => {
+  selectedPosterPath.value = undefined
+  selectedTmdbId.value = undefined
+  selectedTmdbMediaType.value = undefined
+  tmdbShowInfo.value = null
+  formTotalSeasons.value = ''
+  formTotalEpisodes.value = ''
+  formRuntimeMinutes.value = ''
+  formReleaseYear.value = ''
+  formSeason.value = 1
+  formEpisode.value = 1
+  formMinutes.value = 0
+}
+
+const setFormType = (nextType: 'show' | 'movie') => {
+  if (formType.value === nextType) return
+  formType.value = nextType
+
+  if (selectedTmdbId.value !== undefined || selectedTmdbMediaType.value !== undefined) {
+    isSelectingSuggestion.value = true
+    formTitle.value = ''
+    clearTmdbDetails()
+    suggestions.value = []
+    showSuggestions.value = false
+  }
+
+  if (formStatus.value === 'completed') {
+    applyCompletedProgress()
+  }
+}
+
 watch([formTotalSeasons, formTotalEpisodes, formRuntimeMinutes], () => {
   if (formStatus.value === 'completed') {
     applyCompletedProgress()
@@ -249,6 +282,7 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
   formType.value = item.mediaType
   selectedPosterPath.value = item.posterPath
   selectedTmdbId.value = item.id
+  selectedTmdbMediaType.value = item.mediaType
 
   if (item.year) {
     formReleaseYear.value = item.year.toString()
@@ -299,6 +333,7 @@ const closeModal = () => {
   formReleaseYear.value = ''
   selectedPosterPath.value = undefined
   selectedTmdbId.value = undefined
+  selectedTmdbMediaType.value = undefined
   tmdbShowInfo.value = null
   suggestions.value = []
   showSuggestions.value = false
@@ -347,6 +382,15 @@ const handleNumberWheel = (
 
 const handleAddMediaSubmit = async () => {
   errorMessage.value = ''
+
+  if (
+    selectedTmdbId.value !== undefined &&
+    selectedTmdbMediaType.value &&
+    selectedTmdbMediaType.value !== formType.value
+  ) {
+    errorMessage.value = 'This TMDB result does not match the selected type. Search again or switch type to start over.'
+    return
+  }
 
   let payload: AddMediaInput
 
@@ -562,7 +606,7 @@ const handleAddMediaSubmit = async () => {
               type="button"
               class="segment-btn"
               :class="{ active: formType === 'show' }"
-              @click="formType = 'show'"
+              @click="setFormType('show')"
             >
               Show
             </button>
@@ -570,7 +614,7 @@ const handleAddMediaSubmit = async () => {
               type="button"
               class="segment-btn"
               :class="{ active: formType === 'movie' }"
-              @click="formType = 'movie'"
+              @click="setFormType('movie')"
             >
               Movie
             </button>
