@@ -202,8 +202,8 @@ const handleSeasonChange = async (show: Show, delta: number) => {
   await updateMedia(updates)
 }
 
-const requestReleaseCheck = () => {
-  checkShowReleases({ force: true }).catch(() => {})
+const requestReleaseCheck = (showId: string) => {
+  checkShowReleases({ showId }).catch(() => {})
 }
 
 const handleNotifyToggle = async (show: Show) => {
@@ -281,7 +281,7 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
 
     await updateMedia(updates)
     if ((newStatus === 'waiting' || newStatus === 'watching') && item.tmdbId) {
-      requestReleaseCheck()
+      requestReleaseCheck(item.id)
     }
     return
   }

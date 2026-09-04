@@ -392,13 +392,13 @@ const handleAddMediaSubmit = async () => {
   }
 
   try {
-    await addMedia(payload)
+    const added = await addMedia(payload)
     if (
-      payload.mediaType === 'show' &&
-      (payload.status === 'waiting' || payload.status === 'watching') &&
-      payload.tmdbId
+      added.mediaType === 'show' &&
+      (added.status === 'waiting' || added.status === 'watching') &&
+      added.tmdbId
     ) {
-      checkShowReleases({ force: true }).catch(() => {})
+      checkShowReleases({ showId: added.id }).catch(() => {})
     }
     closeModal()
   } catch (err) {
