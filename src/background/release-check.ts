@@ -29,6 +29,76 @@ export const isNotifiableShow = (media: TrackedMedia): media is Show => {
   )
 }
 
+export const DEFAULT_NOTIFY_AT = '09:00'
+
+export const parseNotifyAt = (value?: string): { hour: number; minute: number } => {
+  const match = /^(\d{1,2}):(\d{2})/.exec(value?.trim() ?? '')
+  if (!match) return { hour: 9, minute: 0 }
+  const hour = Math.min(23, Math.max(0, Number(match[1])))
+  const minute = Math.min(59, Math.max(0, Number(match[2])))
+  return { hour, minute }
+}
+
+export const formatNotifyAt = (hour: number, minute: number): string =>
+  `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+
+export const notifyAtOnDate = (at: { hour: number; minute: number }, now: number = Date.now()): number => {
+  const date = new Date(now)
+  date.setHours(at.hour, at.minute, 0, 0)
+  return date.getTime()
+}
+
+/** Next local clock time matching notifyAt (tomorrow if it already passed today). */
+export const nextNotifyAt = (notifyAt: string | undefined, now: number = Date.now()): number => {
+  const parsed = parseNotifyAt(notifyAt)
+  const todaySlot = notifyAtOnDate(parsed, now)
+  if (todaySlot > now) return todaySlot
+  const tomorrow = new Date(todaySlot)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow.getTime()
+}
+
+export const computeNextAlarmWhen = (
+  seasonIntervalHours: number,
+  stallReminderDays: number,
+  notifyAt: string | undefined,
+  lastReleaseCheckAt: number | undefined,
+  now: number = Date.now()
+): number | null => {
+  const periodInMinutes = resolveAlarmPeriodMinutes(seasonIntervalHours, stallReminderDays)
+  if (periodInMinutes === null) return null
+
+  let when = nextNotifyAt(notifyAt, now)
+  const last = lastReleaseCheckAt ?? 0
+  if (last > 0 && periodInMinutes > 24 * 60) {
+    const earliest = last + periodInMinutes * 60 * 1000
+    while (when < earliest) {
+      const nextDay = new Date(when)
+      nextDay.setDate(nextDay.getDate() + 1)
+      when = nextDay.getTime()
+    }
+  }
+  return when
+}
+
+export const shouldCatchUpMissedCheck = (
+  seasonIntervalHours: number,
+  stallReminderDays: number,
+  notifyAt: string | undefined,
+  lastReleaseCheckAt: number | undefined,
+  now: number = Date.now()
+): boolean => {
+  const periodInMinutes = resolveAlarmPeriodMinutes(seasonIntervalHours, stallReminderDays)
+  if (periodInMinutes === null) return false
+
+  const last = lastReleaseCheckAt ?? 0
+  if (last <= 0) return false
+
+  const todaySlot = notifyAtOnDate(parseNotifyAt(notifyAt), now)
+  const periodMs = periodInMinutes * 60 * 1000
+  return now >= todaySlot && last < todaySlot && now - last >= periodMs
+}
+
 export const resolveAlarmPeriodMinutes = (
   seasonIntervalHours: number,
   stallReminderDays: number

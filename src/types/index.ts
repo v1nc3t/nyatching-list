@@ -3,6 +3,9 @@ export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
 export interface AppSettings {
   newSeasonCheckIntervalHours: number // -1 means Never
   stallReminderDays: number // -1 means Never
+  /** Local time to run the release check, as HH:mm */
+  notifyAt?: string
+  lastReleaseCheckAt?: number
   enableSystemNotifications?: boolean // Optional / Deprecated
 }
 

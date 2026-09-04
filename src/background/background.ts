@@ -5,36 +5,35 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
 
 import browser from 'webextension-polyfill'
 import { getSettings, getMediaById } from '../storage'
-import { resolveAlarmPeriodMinutes } from './release-check'
+import { createOsNotificationLocal } from '../utils/notify'
 import { checkShowReleases, parseReleaseNotificationShowId } from './release-poll'
-
-const ALARM_NAME = 'nyatching_daily_check'
+import {
+  ALARM_NAME,
+  isMissedScheduledCheck,
+  scheduleReleaseCheckAlarm,
+} from './alarm-schedule'
 
 export interface SystemMessage {
-  type?: 'SETTINGS_UPDATED'
+  type?: 'SETTINGS_UPDATED' | 'SHOW_OS_NOTIFICATION'
   action?: 'UPDATE_SETTINGS'
+  payload?: {
+    id: string
+    title: string
+    message: string
+  }
 }
 
-export const setupAlarm = async (): Promise<void> => {
-  await browser.alarms.clear(ALARM_NAME)
+export const setupAlarm = async (options: { skipCatchUp?: boolean } = {}): Promise<void> => {
   const settings = await getSettings()
 
-  const periodInMinutes = resolveAlarmPeriodMinutes(
-    settings.newSeasonCheckIntervalHours ?? 24,
-    settings.stallReminderDays ?? 7
-  )
-
-  if (periodInMinutes === null) {
-    console.log('[Nyatching Background] All checks disabled (Never).')
+  if (!options.skipCatchUp && isMissedScheduledCheck(settings)) {
+    console.log('[Nyatching Background] Missed today\'s check; running now.')
+    await runScheduledChecks()
+    await scheduleReleaseCheckAlarm(await getSettings())
     return
   }
 
-  browser.alarms.create(ALARM_NAME, {
-    delayInMinutes: periodInMinutes,
-    periodInMinutes,
-  })
-
-  console.log(`[Nyatching Background] Alarm scheduled every ${periodInMinutes} minutes.`)
+  await scheduleReleaseCheckAlarm(settings)
 }
 
 export const runScheduledChecks = async (): Promise<void> => {
@@ -93,10 +92,33 @@ browser.runtime.onStartup.addListener(async () => {
   await setupAlarm()
 })
 
-browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM_NAME) {
-    runScheduledChecks()
+const handleAlarm = async (alarm: { name: string }): Promise<void> => {
+  if (alarm.name !== ALARM_NAME) return
+  try {
+    await runScheduledChecks()
+  } catch (error) {
+    console.error('[Nyatching Background] Scheduled check failed:', error)
+  } finally {
+    try {
+      await setupAlarm({ skipCatchUp: true })
+    } catch (error) {
+      console.error('[Nyatching Background] Failed to reschedule:', error)
+    }
   }
+}
+
+browser.alarms.onAlarm.addListener((alarm) => handleAlarm(alarm))
+
+self.addEventListener('notificationclick', (event) => {
+  const notificationEvent = event as Event & {
+    notification: { tag?: string; data?: { notificationId?: string }; close: () => void }
+    waitUntil: (promise: Promise<unknown>) => void
+  }
+  notificationEvent.notification.close()
+  const notificationId =
+    notificationEvent.notification.data?.notificationId || notificationEvent.notification.tag || ''
+  const releaseShowId = parseReleaseNotificationShowId(notificationId)
+  notificationEvent.waitUntil(openWatchingLinkOrDashboard(releaseShowId))
 })
 
 const handleRuntimeMessage = async (message: unknown): Promise<{ status: string }> => {
@@ -107,12 +129,18 @@ const handleRuntimeMessage = async (message: unknown): Promise<{ status: string 
     return { status: 'success' }
   }
 
+  if (msg.type === 'SHOW_OS_NOTIFICATION' && msg.payload) {
+    const ok = await createOsNotificationLocal(msg.payload)
+    return { status: ok ? 'shown' : 'failed' }
+  }
+
   return { status: 'ignored' }
 }
 
 const chromeRuntime = (globalThis as typeof globalThis & { chrome?: typeof chrome }).chrome?.runtime
+const isFirefox = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent)
 
-if (chromeRuntime?.onMessage) {
+if (!isFirefox && chromeRuntime?.onMessage) {
   chromeRuntime.onMessage.addListener((message, _sender, sendResponse) => {
     handleRuntimeMessage(message)
       .then((result) => sendResponse(result))
