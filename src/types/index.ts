@@ -3,6 +3,8 @@ export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
 export interface AppSettings {
   newSeasonCheckIntervalHours: number // -1 means Never
   stallReminderDays: number // -1 means Never
+  lastReleaseCheckAt?: number
+  lastTmdbCheckAt?: number
   enableSystemNotifications?: boolean // Optional / Deprecated
 }
 
@@ -17,9 +19,9 @@ export interface BaseMedia {
   createdAt: number;
   updatedAt: number;
   lastProgressUpdate: number      // Updated whenever episode or minutes change
-  lastStallNotified?: number      // Prevents repeated notification spam
-  /** When true, remind if progress (episodes/minutes) is not updated */
-  notifyEnabled?: boolean;
+  lastStallNotified?: number
+  /** When false, this item never sends notifications. Missing means on. */
+  notify?: boolean
 }
 
 export interface Show extends BaseMedia {
@@ -27,10 +29,10 @@ export interface Show extends BaseMedia {
   currentSeason: number;
   currentEpisode: number;
   totalSeasons?: number;
-  /** Episode count of the current season */
+  /** Last released episode of the current season (progress max) */
   totalEpisodes?: number;
-  /** When true, background checks TMDB for new seasons */
-  tracked?: boolean;
+  lastNotifiedSeason?: number;
+  lastNotifiedEpisode?: number;
 }
 
 export interface Movie extends BaseMedia {
@@ -46,6 +48,10 @@ export function isShow(media: TrackedMedia): media is Show {
   return media.mediaType === 'show';
 }
 
+export function isNotifyEnabled(media: TrackedMedia): boolean {
+  return media.notify !== false;
+}
+
 export function isMovie(media: TrackedMedia): media is Movie {
   return media.mediaType === 'movie';
 }
@@ -56,6 +62,7 @@ export interface NotificationItem {
   title: string
   message: string
   posterPath?: string
+  watchingUrl?: string
   timestamp: number
   read: boolean
 }

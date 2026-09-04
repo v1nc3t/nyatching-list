@@ -9,11 +9,12 @@ import {
   getTMDBDetails,
   fetchTmdbByImdbId,
   parseTMDBShowInfo,
-  getEpisodeCountForSeason,
+  getAiredEpisodeCountForSeason,
   completedProgressFromShowInfo,
   TMDBSuggestion,
   TMDBShowInfo,
 } from '../services/tmdb'
+import { checkShowReleases } from '../background/release-poll'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -163,8 +164,8 @@ const applyShowProgressFromTmdb = () => {
 
   formSeason.value = 1
   formEpisode.value = 1
-  const seasonOneCount = getEpisodeCountForSeason(info, 1)
-  formTotalEpisodes.value = seasonOneCount ? seasonOneCount.toString() : ''
+  const seasonOneAired = getAiredEpisodeCountForSeason(info, 1)
+  formTotalEpisodes.value = seasonOneAired ? seasonOneAired.toString() : ''
 }
 
 // Clamp season against total seasons and sync episode count for the selected season
@@ -190,12 +191,10 @@ watch(formSeason, (newSeason) => {
 
   const info = tmdbShowInfo.value
   if (info) {
-    const episodeCount = getEpisodeCountForSeason(info, newSeason)
-    if (episodeCount) {
-      formTotalEpisodes.value = episodeCount.toString()
-      if (formEpisode.value > episodeCount) {
-        formEpisode.value = episodeCount
-      }
+    const airedCount = getAiredEpisodeCountForSeason(info, newSeason)
+    formTotalEpisodes.value = airedCount ? airedCount.toString() : ''
+    if (airedCount && formEpisode.value > airedCount) {
+      formEpisode.value = airedCount
     }
   }
 })
@@ -393,7 +392,14 @@ const handleAddMediaSubmit = async () => {
   }
 
   try {
-    await addMedia(payload)
+    const added = await addMedia(payload)
+    if (
+      added.mediaType === 'show' &&
+      (added.status === 'waiting' || added.status === 'watching') &&
+      added.tmdbId
+    ) {
+      checkShowReleases({ showId: added.id }).catch(() => {})
+    }
     closeModal()
   } catch (err) {
     errorMessage.value = (err as Error).message
@@ -603,6 +609,13 @@ const handleAddMediaSubmit = async () => {
                 :key="st"
                 class="option-item"
                 :class="{ active: formStatus === st }"
+                :title="
+                  st === 'waiting'
+                    ? 'Waiting: notify when a new episode or season is out'
+                    : st === 'watching'
+                      ? 'Watching: remind you when the next episode or season airs'
+                      : undefined
+                "
                 @click="setStatus(st)"
               >
                 {{ formatStatus(st) }}
@@ -669,7 +682,7 @@ const handleAddMediaSubmit = async () => {
                 />
               </div>
               <div class="form-group">
-                <label for="total-episodes-input">Total Episodes (optional)</label>
+                <label for="total-episodes-input">Released Episodes (optional)</label>
                 <input
                   id="total-episodes-input"
                   v-model="formTotalEpisodes"

@@ -3,6 +3,7 @@ import { ref, onMounted, computed, onUnmounted } from 'vue'
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings, saveSettings } from '../storage'
+import { formatNextCheckLabel, nextCheckTimestamp, scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -10,7 +11,6 @@ const emit = defineEmits<{
 
 const isSaving = ref(false)
 
-// Dropdown state controls
 const isOpenSeason = ref(false)
 const isOpenStall = ref(false)
 
@@ -19,7 +19,8 @@ const settings = ref<AppSettings>({
   stallReminderDays: 7,
 })
 
-// Episode Check Interval Options (Value in Hours; -1 = Disabled)
+const nextCheckHint = computed(() => formatNextCheckLabel(nextCheckTimestamp(settings.value)))
+
 const seasonOptions = [
   { label: 'Never', value: -1 },
   { label: '1 Day', value: 24 },
@@ -32,7 +33,6 @@ const seasonOptions = [
   { label: '1 Year', value: 8760 },
 ]
 
-// Inactivity Reminder Options (Value in Days; -1 = Disabled)
 const stallOptions = [
   { label: 'Never', value: -1 },
   { label: '1 Day', value: 1 },
@@ -55,15 +55,15 @@ const selectedStallLabel = computed(() => {
   return match ? match.label : 'Select threshold'
 })
 
-// Close dropdowns when clicking outside
+const closeAllSelects = () => {
+  isOpenSeason.value = false
+  isOpenStall.value = false
+}
+
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
-  if (!target.closest('.select-season')) {
-    isOpenSeason.value = false
-  }
-  if (!target.closest('.select-stall')) {
-    isOpenStall.value = false
-  }
+  if (!target.closest('.select-season')) isOpenSeason.value = false
+  if (!target.closest('.select-stall')) isOpenStall.value = false
 }
 
 onMounted(async () => {
@@ -76,13 +76,15 @@ onUnmounted(() => {
 })
 
 const toggleSeasonDropdown = () => {
-  isOpenSeason.value = !isOpenSeason.value
-  isOpenStall.value = false
+  const next = !isOpenSeason.value
+  closeAllSelects()
+  isOpenSeason.value = next
 }
 
 const toggleStallDropdown = () => {
-  isOpenStall.value = !isOpenStall.value
-  isOpenSeason.value = false
+  const next = !isOpenStall.value
+  closeAllSelects()
+  isOpenStall.value = next
 }
 
 const selectSeasonOption = (val: number) => {
@@ -98,13 +100,17 @@ const selectStallOption = (val: number) => {
 const handleSave = async () => {
   isSaving.value = true
   try {
-    await saveSettings(settings.value)
+    const saved = await saveSettings({ ...settings.value })
 
-    // Polyfilled cross-browser message dispatch to background listener
-    await browser.runtime.sendMessage({
-      type: 'SETTINGS_UPDATED',
-      settings: settings.value,
-    })
+    try {
+      await browser.runtime.sendMessage({
+        type: 'SETTINGS_UPDATED',
+        settings: saved,
+      })
+    } catch (error) {
+      console.error('[Nyatching List] Background did not acknowledge settings:', error)
+      await scheduleReleaseCheckAlarm(saved)
+    }
 
     emit('close')
   } catch (error) {
@@ -124,9 +130,12 @@ const handleSave = async () => {
       </div>
 
       <div class="modal-body">
-        <!-- New Season/Episode Check Frequency -->
         <div class="form-group">
           <label>New Episode Check Frequency</label>
+          <p class="form-hint">
+            How often to look up watching and waiting shows on TMDB for new episodes or seasons.
+            Checks run at 12:00 AM. {{ nextCheckHint }} If the browser is closed, the check runs when it next opens.
+          </p>
           <div class="select select-season" :class="{ 'is-open': isOpenSeason }">
             <div class="selected" @click="toggleSeasonDropdown">
               <span>{{ selectedSeasonLabel }}</span>
@@ -148,9 +157,12 @@ const handleSave = async () => {
           </div>
         </div>
 
-        <!-- Inactivity Reminder Frequency -->
         <div class="form-group">
           <label>Inactivity Reminder Frequency</label>
+          <p class="form-hint">
+            Remind you when you have not updated a watching or waiting title for this long.
+            Movies only use this reminder.
+          </p>
           <div class="select select-stall" :class="{ 'is-open': isOpenStall }">
             <div class="selected" @click="toggleStallDropdown">
               <span>{{ selectedStallLabel }}</span>
@@ -200,7 +212,7 @@ const handleSave = async () => {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem 1.4rem;
-  width: 340px;
+  width: 380px;
   color: var(--text-primary);
   box-shadow: 0 8px 24px var(--shadow);
 }
@@ -253,6 +265,16 @@ const handleSave = async () => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.form-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .select {
