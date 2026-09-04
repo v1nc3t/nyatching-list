@@ -37,7 +37,6 @@ export const TIME_INTERVAL_OPTIONS = [
 export const DEFAULT_SETTINGS: AppSettings = {
   newSeasonCheckIntervalHours: 24,
   stallReminderDays: 7,
-  notifyAt: '09:00',
 };
 
 // ==========================================
@@ -252,6 +251,7 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
       currentMinutes: input.currentMinutes ?? 0,
       runtimeMinutes: input.runtimeMinutes,
       releaseYear: input.releaseYear,
+      notify: true,
     };
   }
 

@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings, saveSettings } from '../storage'
-import { formatNotifyAt, parseNotifyAt } from '../background/release-check'
 import { formatNextCheckLabel, nextCheckTimestamp, scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
@@ -14,30 +13,14 @@ const isSaving = ref(false)
 
 const isOpenSeason = ref(false)
 const isOpenStall = ref(false)
-const isOpenHour = ref(false)
-const isOpenMinute = ref(false)
 
 const settings = ref<AppSettings>({
   newSeasonCheckIntervalHours: 24,
   stallReminderDays: 7,
-  notifyAt: '09:00',
 })
-
-const hourOptions = Array.from({ length: 24 }, (_, hour) => ({
-  value: hour,
-  label: String(hour).padStart(2, '0'),
-}))
-
-const minuteOptions = Array.from({ length: 60 }, (_, minute) => ({
-  value: minute,
-  label: String(minute).padStart(2, '0'),
-}))
-
-const notifyParts = computed(() => parseNotifyAt(settings.value.notifyAt))
 
 const nextCheckHint = computed(() => formatNextCheckLabel(nextCheckTimestamp(settings.value)))
 
-// Episode Check Interval Options (Value in Hours; -1 = Disabled)
 const seasonOptions = [
   { label: 'Never', value: -1 },
   { label: '1 Day', value: 24 },
@@ -50,7 +33,6 @@ const seasonOptions = [
   { label: '1 Year', value: 8760 },
 ]
 
-// Inactivity Reminder Options (Value in Days; -1 = Disabled)
 const stallOptions = [
   { label: 'Never', value: -1 },
   { label: '1 Day', value: 1 },
@@ -73,33 +55,16 @@ const selectedStallLabel = computed(() => {
   return match ? match.label : 'Select threshold'
 })
 
-// Close dropdowns when clicking outside
 const closeAllSelects = () => {
   isOpenSeason.value = false
   isOpenStall.value = false
-  isOpenHour.value = false
-  isOpenMinute.value = false
 }
 
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   if (!target.closest('.select-season')) isOpenSeason.value = false
   if (!target.closest('.select-stall')) isOpenStall.value = false
-  if (!target.closest('.select-hour')) isOpenHour.value = false
-  if (!target.closest('.select-minute')) isOpenMinute.value = false
 }
-
-watch(isOpenHour, async (open) => {
-  if (!open) return
-  await nextTick()
-  document.querySelector('.select-hour .option-item.active')?.scrollIntoView({ block: 'nearest' })
-})
-
-watch(isOpenMinute, async (open) => {
-  if (!open) return
-  await nextTick()
-  document.querySelector('.select-minute .option-item.active')?.scrollIntoView({ block: 'nearest' })
-})
 
 onMounted(async () => {
   settings.value = await getSettings()
@@ -122,43 +87,6 @@ const toggleStallDropdown = () => {
   isOpenStall.value = next
 }
 
-const toggleHourDropdown = () => {
-  const next = !isOpenHour.value
-  closeAllSelects()
-  isOpenHour.value = next
-}
-
-const toggleMinuteDropdown = () => {
-  const next = !isOpenMinute.value
-  closeAllSelects()
-  isOpenMinute.value = next
-}
-
-const setNotifyTime = (hour: number, minute: number) => {
-  settings.value.notifyAt = formatNotifyAt(hour, minute)
-}
-
-const wrapHour = (hour: number) => ((hour % 24) + 24) % 24
-const wrapMinute = (minute: number) => ((minute % 60) + 60) % 60
-
-const nudgeHour = (delta: number) => {
-  setNotifyTime(wrapHour(notifyParts.value.hour + delta), notifyParts.value.minute)
-}
-
-const nudgeMinute = (delta: number) => {
-  setNotifyTime(notifyParts.value.hour, wrapMinute(notifyParts.value.minute + delta))
-}
-
-const selectHour = (hour: number) => {
-  setNotifyTime(hour, notifyParts.value.minute)
-  isOpenHour.value = false
-}
-
-const selectMinute = (minute: number) => {
-  setNotifyTime(notifyParts.value.hour, minute)
-  isOpenMinute.value = false
-}
-
 const selectSeasonOption = (val: number) => {
   settings.value.newSeasonCheckIntervalHours = val
   isOpenSeason.value = false
@@ -172,13 +100,7 @@ const selectStallOption = (val: number) => {
 const handleSave = async () => {
   isSaving.value = true
   try {
-    const parsed = parseNotifyAt(settings.value.notifyAt)
-    const notifyAt = formatNotifyAt(parsed.hour, parsed.minute)
-    const saved = await saveSettings({
-      ...settings.value,
-      notifyAt,
-    })
-    settings.value.notifyAt = notifyAt
+    const saved = await saveSettings({ ...settings.value })
 
     try {
       await browser.runtime.sendMessage({
@@ -208,10 +130,12 @@ const handleSave = async () => {
       </div>
 
       <div class="modal-body">
-        <!-- New Season/Episode Check Frequency -->
         <div class="form-group">
           <label>New Episode Check Frequency</label>
-          <p class="form-hint">How often to look up watching and waiting shows on TMDB for new episodes or seasons. Checks run at the time below.</p>
+          <p class="form-hint">
+            How often to look up watching and waiting shows on TMDB for new episodes or seasons.
+            Checks run at 12:00 AM. {{ nextCheckHint }} If the browser is closed, the check runs when it next opens.
+          </p>
           <div class="select select-season" :class="{ 'is-open': isOpenSeason }">
             <div class="selected" @click="toggleSeasonDropdown">
               <span>{{ selectedSeasonLabel }}</span>
@@ -234,67 +158,11 @@ const handleSave = async () => {
         </div>
 
         <div class="form-group">
-          <label>Check Time</label>
-          <p class="form-hint">{{ nextCheckHint }} If the browser is closed, the check runs when it next opens.</p>
-          <div class="time-picker">
-            <div class="time-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 7v5l3 2" />
-              </svg>
-            </div>
-            <div class="time-unit select-hour" :class="{ 'is-open': isOpenHour }">
-              <button type="button" class="time-step" aria-label="Increase hour" @click="nudgeHour(1)">
-                <svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 6.5L6 1.5L11 6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              </button>
-              <button type="button" class="time-digit" aria-label="Hour" @click="toggleHourDropdown">
-                {{ String(notifyParts.hour).padStart(2, '0') }}
-              </button>
-              <button type="button" class="time-step" aria-label="Decrease hour" @click="nudgeHour(-1)">
-                <svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 1.5L6 6.5L11 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              </button>
-              <div v-show="isOpenHour" class="options">
-                <label
-                  v-for="opt in hourOptions"
-                  :key="opt.value"
-                  class="option-item"
-                  :class="{ active: notifyParts.hour === opt.value }"
-                  @click="selectHour(opt.value)"
-                >
-                  {{ opt.label }}
-                </label>
-              </div>
-            </div>
-            <span class="time-sep" aria-hidden="true">:</span>
-            <div class="time-unit select-minute" :class="{ 'is-open': isOpenMinute }">
-              <button type="button" class="time-step" aria-label="Increase minute" @click="nudgeMinute(1)">
-                <svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 6.5L6 1.5L11 6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              </button>
-              <button type="button" class="time-digit" aria-label="Minute" @click="toggleMinuteDropdown">
-                {{ String(notifyParts.minute).padStart(2, '0') }}
-              </button>
-              <button type="button" class="time-step" aria-label="Decrease minute" @click="nudgeMinute(-1)">
-                <svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true"><path d="M1 1.5L6 6.5L11 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              </button>
-              <div v-show="isOpenMinute" class="options">
-                <label
-                  v-for="opt in minuteOptions"
-                  :key="opt.value"
-                  class="option-item"
-                  :class="{ active: notifyParts.minute === opt.value }"
-                  @click="selectMinute(opt.value)"
-                >
-                  {{ opt.label }}
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Inactivity Reminder Frequency -->
-        <div class="form-group">
           <label>Inactivity Reminder Frequency</label>
-          <p class="form-hint">Extra poll interval while a show is still airing. Set Never to only use the check above.</p>
+          <p class="form-hint">
+            Remind you when you have not updated a watching or waiting title for this long.
+            Movies only use this reminder.
+          </p>
           <div class="select select-stall" :class="{ 'is-open': isOpenStall }">
             <div class="selected" @click="toggleStallDropdown">
               <span>{{ selectedStallLabel }}</span>
@@ -407,84 +275,6 @@ const handleSave = async () => {
   font-weight: 500;
   text-transform: none;
   letter-spacing: 0;
-}
-
-.time-picker {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.55rem 0.75rem;
-}
-
-.time-icon {
-  display: flex;
-  color: var(--accent);
-  margin-right: 0.35rem;
-}
-
-.time-unit {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.12rem;
-}
-
-.time-step {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.6rem;
-  height: 1rem;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.time-step:hover {
-  color: var(--accent);
-  background: var(--bg-card);
-}
-
-.time-digit {
-  min-width: 2.4rem;
-  padding: 0.2rem 0.35rem;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 1.15rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
-  font-family: inherit;
-  cursor: pointer;
-  border-radius: 6px;
-}
-
-.time-digit:hover,
-.time-unit.is-open .time-digit {
-  background: var(--bg-card);
-  color: var(--accent);
-}
-
-.time-sep {
-  color: var(--text-muted);
-  font-size: 1.2rem;
-  font-weight: 700;
-  line-height: 1;
-  padding: 0 0.15rem 0.15rem;
-}
-
-.time-unit .options {
-  min-width: 4.2rem;
-  text-align: center;
 }
 
 .select {

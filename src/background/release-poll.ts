@@ -10,13 +10,16 @@ import {
 } from '../services/tmdb'
 import {
   decideReleaseAction,
+  decideStallAction,
   isNotifiableShow,
+  isNotifiableForStall,
+  isTmdbCheckDue,
   buildShowMetaUpdates,
   formatEpisodeLabel,
   nextEpisodeToWatch,
   ReleaseNotice,
 } from './release-check'
-import { Show } from '../types'
+import { Show, TrackedMedia } from '../types'
 import {
   TMDBAiredEpisode,
   compareAiredEpisodes,
@@ -54,22 +57,22 @@ export const parseReleaseNotificationShowId = (notificationId: string): string |
   }
 }
 
-const sendReleaseNotification = async (show: Show, notice: ReleaseNotice): Promise<void> => {
+const sendReleaseNotification = async (media: TrackedMedia, notice: ReleaseNotice): Promise<void> => {
   await addNotificationLog({
-    showId: show.id,
+    showId: media.id,
     title: notice.logTitle,
     message: notice.logMessage,
-    posterPath: show.posterPath,
+    posterPath: media.posterPath,
     watchingUrl: notice.watchingUrl,
   })
 
   const shown = await createOsNotification({
-    id: buildReleaseNotificationId(show.id),
+    id: buildReleaseNotificationId(media.id),
     title: notice.title,
     message: notice.message,
   })
   if (!shown) {
-    console.error('[Nyatching List] OS notification was not shown for', show.title)
+    console.error('[Nyatching List] OS notification was not shown for', media.title)
   }
 }
 
@@ -170,6 +173,19 @@ const processShowRelease = async (
   }
 }
 
+const processStallReminder = async (
+  media: TrackedMedia,
+  stallReminderDays: number
+): Promise<{ notified: boolean; note?: string }> => {
+  const decision = decideStallAction(media, stallReminderDays)
+  if (decision.notify && decision.notice) {
+    await sendReleaseNotification(media, decision.notice)
+    await updateMedia({ id: media.id, lastStallNotified: decision.lastStallNotified })
+    return { notified: true }
+  }
+  return { notified: false }
+}
+
 export const checkShowReleases = async (
   options: { force?: boolean; showId?: string } = {}
 ): Promise<ReleaseCheckSummary> => {
@@ -188,18 +204,45 @@ export const checkShowReleases = async (
     return summary
   }
 
-  const shows = (await getAllMedia())
-    .filter(isNotifiableShow)
-    .filter((show) => !options.showId || show.id === options.showId)
-  summary.checkedCount = shows.length
+  const mediaList = await getAllMedia()
+  const targeted = mediaList.filter((item) => !options.showId || item.id === options.showId)
+  const notifiedIds = new Set<string>()
 
-  for (const show of shows) {
-    const result = await processShowRelease(show, Boolean(options.force) || !options.showId)
-    if (result.notified) {
-      summary.notifiedCount += 1
-      summary.notifiedTitles.push(show.title)
-    } else if (result.note) {
-      summary.notes.push(result.note)
+  const tmdbDue =
+    seasonIntervalHours > 0 &&
+    (Boolean(options.showId) ||
+      Boolean(options.force) ||
+      isTmdbCheckDue(seasonIntervalHours, settings.lastTmdbCheckAt))
+
+  if (tmdbDue) {
+    const shows = targeted.filter(isNotifiableShow)
+    summary.checkedCount += shows.length
+    for (const show of shows) {
+      const result = await processShowRelease(show, Boolean(options.force) || !options.showId)
+      if (result.notified) {
+        summary.notifiedCount += 1
+        summary.notifiedTitles.push(show.title)
+        notifiedIds.add(show.id)
+      } else if (result.note) {
+        summary.notes.push(result.note)
+      }
+    }
+    if (!options.showId) {
+      await saveSettings({ lastTmdbCheckAt: Date.now() })
+    }
+  }
+
+  const stallDue = stallReminderDays > 0 && (Boolean(options.force) || !options.showId)
+  if (stallDue) {
+    const stallTargets = targeted.filter(isNotifiableForStall)
+    if (!tmdbDue) summary.checkedCount += stallTargets.length
+    for (const item of stallTargets) {
+      if (notifiedIds.has(item.id)) continue
+      const result = await processStallReminder(item, stallReminderDays)
+      if (result.notified) {
+        summary.notifiedCount += 1
+        summary.notifiedTitles.push(item.title)
+      }
     }
   }
 

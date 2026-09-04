@@ -12,7 +12,6 @@ export const nextCheckTimestamp = (settings: AppSettings, now: number = Date.now
   return computeNextAlarmWhen(
     settings.newSeasonCheckIntervalHours ?? 24,
     settings.stallReminderDays ?? 7,
-    settings.notifyAt,
     settings.lastReleaseCheckAt,
     now
   )
@@ -65,7 +64,6 @@ export const isMissedScheduledCheck = (settings: AppSettings, now: number = Date
   return shouldCatchUpMissedCheck(
     settings.newSeasonCheckIntervalHours ?? 24,
     settings.stallReminderDays ?? 7,
-    settings.notifyAt,
     settings.lastReleaseCheckAt,
     now
   )

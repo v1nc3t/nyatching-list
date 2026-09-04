@@ -206,8 +206,8 @@ const requestReleaseCheck = (showId: string) => {
   checkShowReleases({ showId }).catch(() => {})
 }
 
-const handleNotifyToggle = async (show: Show) => {
-  await updateMedia({ id: show.id, notify: !isNotifyEnabled(show) })
+const handleNotifyToggle = async (item: TrackedMedia) => {
+  await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
 }
 
 // Handlers for Movie
@@ -630,12 +630,19 @@ const stopTitleMarquee = (event: Event) => {
                   Edit Link
                 </button>
                 <button
-                  v-if="isShow(item)"
                   type="button"
                   class="link-badge notify-badge"
                   :class="{ 'is-on': isNotifyEnabled(item), 'is-off': !isNotifyEnabled(item) }"
                   :aria-pressed="isNotifyEnabled(item)"
-                  :title="isNotifyEnabled(item) ? 'Notifications on' : 'Notifications off'"
+                  :title="
+                    isMovie(item)
+                      ? isNotifyEnabled(item)
+                        ? 'Inactivity notifications on'
+                        : 'Inactivity notifications off'
+                      : isNotifyEnabled(item)
+                        ? 'Notifications on'
+                        : 'Notifications off'
+                  "
                   @click="handleNotifyToggle(item)"
                 >
                   Notify
