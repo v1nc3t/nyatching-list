@@ -127,6 +127,7 @@ const handleSave = async () => {
         <!-- New Season/Episode Check Frequency -->
         <div class="form-group">
           <label>New Episode Check Frequency</label>
+          <p class="form-hint">How often to look up watching and waiting shows on TMDB for new episodes or seasons.</p>
           <div class="select select-season" :class="{ 'is-open': isOpenSeason }">
             <div class="selected" @click="toggleSeasonDropdown">
               <span>{{ selectedSeasonLabel }}</span>
@@ -151,6 +152,7 @@ const handleSave = async () => {
         <!-- Inactivity Reminder Frequency -->
         <div class="form-group">
           <label>Inactivity Reminder Frequency</label>
+          <p class="form-hint">Extra poll interval while a show is still airing. Set Never to only use the check above.</p>
           <div class="select select-stall" :class="{ 'is-open': isOpenStall }">
             <div class="selected" @click="toggleStallDropdown">
               <span>{{ selectedStallLabel }}</span>
@@ -200,7 +202,7 @@ const handleSave = async () => {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem 1.4rem;
-  width: 340px;
+  width: 380px;
   color: var(--text-primary);
   box-shadow: 0 8px 24px var(--shadow);
 }
@@ -253,6 +255,16 @@ const handleSave = async () => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.form-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .select {

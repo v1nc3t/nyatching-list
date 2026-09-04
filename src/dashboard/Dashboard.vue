@@ -24,12 +24,13 @@ import SettingsModal from './Settings.vue'
 import WatchLinkModal from './WatchLinkModal.vue'
 import {
   getTMDBShowInfo,
-  getEpisodeCountForSeason,
+  getAiredEpisodeCountForSeason,
   completedProgressFromShowInfo,
   resolveCompletedShowProgress,
   resolveCompletedMovieProgress,
   TMDBShowInfo,
 } from '../services/tmdb'
+import { checkShowReleases } from '../background/release-poll'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -61,12 +62,34 @@ const loadMedia = async () => {
   mediaList.value = await getAllMedia()
 }
 
+const syncReleasedEpisodeCaps = async () => {
+  const shows = mediaList.value.filter(isShow)
+  for (const show of shows) {
+    if (!show.tmdbId) continue
+    const info = await loadShowInfo(show.tmdbId)
+    if (!info) continue
+    const aired = getAiredEpisodeCountForSeason(info, show.currentSeason)
+    if (!aired) continue
+    const nextTotal = Math.max(aired, show.currentEpisode)
+    if (nextTotal !== show.totalEpisodes) {
+      await updateMedia({ id: show.id, totalEpisodes: nextTotal })
+    }
+  }
+}
+
 const loadNotifications = async () => {
   notificationLogs.value = await getNotificationLog()
 }
 
+const openNotificationLog = async () => {
+  await loadNotifications()
+  isNotificationsOpen.value = true
+}
+
 onMounted(() => {
-  loadMedia()
+  loadMedia().then(() => {
+    syncReleasedEpisodeCaps().catch(() => {})
+  })
   loadNotifications()
 
   // Reactive Storage Updates
@@ -120,11 +143,7 @@ const stats = computed(() => {
   const shows = mediaList.value.filter(isShow)
   const movies = mediaList.value.filter(isMovie).length
 
-  const tracked = shows.filter(
-    (s) => isTrackableStatus(s.status) && s.tracked === true
-  ).length
-
-  return { total, watching, completed, shows: shows.length, movies, tracked }
+  return { total, watching, completed, shows: shows.length, movies }
 })
 
 // Filtering & Sorting
@@ -167,9 +186,11 @@ const handleSeasonChange = async (show: Show, delta: number) => {
 
   if (show.tmdbId) {
     const info = await loadShowInfo(show.tmdbId)
-    const episodeCount = info ? getEpisodeCountForSeason(info, nextSeason) : undefined
-    if (episodeCount) {
-      updates.totalEpisodes = episodeCount
+    const airedCount = info ? getAiredEpisodeCountForSeason(info, nextSeason) : undefined
+    if (airedCount) {
+      updates.totalEpisodes = airedCount
+    } else {
+      updates.totalEpisodes = undefined
     }
   }
 
@@ -180,18 +201,8 @@ const handleSeasonChange = async (show: Show, delta: number) => {
   await updateMedia(updates)
 }
 
-const isTrackableStatus = (status: MediaStatus) => status === 'watching' || status === 'waiting'
-
-const isNotifyableStatus = (status: MediaStatus) => status === 'watching'
-
-const handleTrackToggle = async (show: Show) => {
-  if (!isTrackableStatus(show.status)) return
-  await updateMedia({ id: show.id, tracked: !show.tracked })
-}
-
-const handleNotifyToggle = async (item: TrackedMedia) => {
-  if (!isNotifyableStatus(item.status)) return
-  await updateMedia({ id: item.id, notifyEnabled: !item.notifyEnabled })
+const requestReleaseCheck = () => {
+  checkShowReleases({ force: true }).catch(() => {})
 }
 
 // Handlers for Movie
@@ -246,13 +257,6 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
   if (isShow(item)) {
     const updates: Partial<Show> & { id: string } = { id: item.id, status: newStatus }
 
-    if (!isTrackableStatus(newStatus)) {
-      updates.tracked = false
-    }
-    if (!isNotifyableStatus(newStatus)) {
-      updates.notifyEnabled = false
-    }
-
     if (newStatus === 'completed') {
       let progress = null
       if (item.tmdbId) {
@@ -271,13 +275,13 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
     }
 
     await updateMedia(updates)
+    if ((newStatus === 'waiting' || newStatus === 'watching') && item.tmdbId) {
+      requestReleaseCheck()
+    }
     return
   }
 
   const updates: Partial<Movie> & { id: string } = { id: item.id, status: newStatus }
-  if (!isNotifyableStatus(newStatus)) {
-    updates.notifyEnabled = false
-  }
 
   if (newStatus === 'completed') {
     const progress = await resolveCompletedMovieProgress(item.tmdbId, item)
@@ -336,7 +340,7 @@ const stopTitleMarquee = (event: Event) => {
           <button
             type="button"
             class="icon-btn notif-btn"
-            @click="isNotificationsOpen = !isNotificationsOpen"
+            @click="openNotificationLog"
             aria-label="Notifications"
             title="Notifications Log"
           >
@@ -394,7 +398,10 @@ const stopTitleMarquee = (event: Event) => {
         </div>
 
         <!-- Settings Modal Portal -->
-        <SettingsModal v-if="isSettingsOpen" @close="isSettingsOpen = false" />
+        <SettingsModal
+          v-if="isSettingsOpen"
+          @close="isSettingsOpen = false"
+        />
         <WatchLinkModal v-if="linkEditItem" :item="linkEditItem" @close="linkEditItem = null" />
       </div>
     </header>
@@ -445,6 +452,15 @@ const stopTitleMarquee = (event: Event) => {
                   <span class="notif-time">{{ formatTimestamp(item.timestamp) }}</span>
                 </div>
                 <p class="notif-msg">{{ item.message }}</p>
+                <a
+                  v-if="item.watchingUrl"
+                  class="notif-watch-link"
+                  :href="item.watchingUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open watching link
+                </a>
               </div>
 
               <button
@@ -701,112 +717,19 @@ const stopTitleMarquee = (event: Event) => {
                     :key="st"
                     class="option-item"
                     :class="{ active: item.status === st }"
+                    :title="
+                      st === 'waiting'
+                        ? 'Waiting: notify when a new episode or season is out'
+                        : st === 'watching'
+                          ? 'Watching: remind you when the next episode or season airs'
+                          : undefined
+                    "
                     @click="handleStatusChange(item, st)"
                   >
                     {{ formatStatus(st) }}
                   </label>
                 </div>
               </div>
-            </div>
-
-            <!-- Track (shows) + Notify (shows & movies) — no label -->
-            <div class="action-row-box">
-              <button
-                v-if="isShow(item)"
-                type="button"
-                class="action-toggle-btn"
-                :class="{
-                  'is-active': isTrackableStatus(item.status) && item.tracked === true,
-                  'is-disabled': !isTrackableStatus(item.status),
-                }"
-                :disabled="!isTrackableStatus(item.status)"
-                :title="
-                  !isTrackableStatus(item.status)
-                    ? 'Track is only available while Watching or Waiting'
-                    : item.tracked
-                      ? 'Stop checking for new seasons'
-                      : 'Check in the background for new seasons'
-                "
-                @click="handleTrackToggle(item)"
-              >
-                <svg
-                  v-if="isTrackableStatus(item.status) && item.tracked === true"
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <svg
-                  v-else
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                <span>{{ item.tracked ? 'Tracked' : 'Track' }}</span>
-              </button>
-
-              <button
-                type="button"
-                class="action-toggle-btn"
-                :class="{
-                  'is-active': isNotifyableStatus(item.status) && item.notifyEnabled === true,
-                  'is-disabled': !isNotifyableStatus(item.status),
-                }"
-                :disabled="!isNotifyableStatus(item.status)"
-                :title="
-                  !isNotifyableStatus(item.status)
-                    ? 'Notify is only available while Watching'
-                    : item.notifyEnabled
-                      ? 'Stop inactivity reminders'
-                      : 'Remind me if I stop updating progress'
-                "
-                @click="handleNotifyToggle(item)"
-              >
-                <svg
-                  v-if="isNotifyableStatus(item.status) && item.notifyEnabled === true"
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
-                <svg
-                  v-else
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </svg>
-                <span>{{ item.notifyEnabled ? 'Notify on' : 'Notify' }}</span>
-              </button>
             </div>
           </div>
         </article>
@@ -1000,7 +923,31 @@ html, body {
 .drawer-content {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
+  overflow-x: hidden;
+  padding: 1rem 0.5rem 1rem 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.drawer-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.drawer-content::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 0.5rem 0;
+}
+
+.drawer-content::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.drawer-content::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted);
+  background-clip: padding-box;
 }
 
 .notif-empty {
@@ -1075,6 +1022,19 @@ html, body {
   font-size: 0.8rem;
   color: var(--text-secondary);
   line-height: 1.3;
+}
+
+.notif-watch-link {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.notif-watch-link:hover {
+  text-decoration: underline;
 }
 
 .dismiss-notif-btn {
@@ -1555,52 +1515,6 @@ html, body {
 .stepper-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-
-/* Track / Notify action row (no label) */
-.action-row-box {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.action-toggle-btn {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 0.4rem 0.55rem;
-  border-radius: 8px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.action-toggle-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text-primary);
-}
-
-.action-toggle-btn.is-active {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  border-color: var(--accent);
-}
-
-.action-toggle-btn.is-active:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.action-toggle-btn.is-disabled,
-.action-toggle-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 /* Status Row & Interactive Uiverse Select */
