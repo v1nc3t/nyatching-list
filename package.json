@@ -23,8 +23,7 @@
     "build:chrome": "vue-tsc --noEmit && vite build",
     "build:firefox": "vue-tsc --noEmit && TARGET_BROWSER=firefox vite build",
     "preview": "vite preview",
-    "fmt": "prettier --write '**/*.{vue,ts,json,css,scss,md}'",
-    "zip": "npm run build && node src/zip.js"
+    "fmt": "prettier --write '**/*.{vue,ts,json,css,scss,md}'"
   },
   "dependencies": {
     "vue": "^3.3.4",
@@ -34,10 +33,9 @@
     "@crxjs/vite-plugin": "^2.0.0-beta.26",
     "@types/chrome": "^0.0.246",
     "@types/firefox-webext-browser": "^120.0.1",
+    "@types/node": "^22.20.3",
     "@types/webextension-polyfill": "^0.12.5",
     "@vitejs/plugin-vue": "^6.0.8",
-    "gulp": "^5.0.0",
-    "gulp-zip": "^6.0.0",
     "prettier": "^3.0.3",
     "typescript": "^5.2.2",
     "vite": "^8.2.0",
