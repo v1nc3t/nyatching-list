@@ -52,6 +52,16 @@ export default defineManifest({
           required: ['none'],
         },
       },
+      // CRXJS types omit gecko_android; it is valid Firefox and kept at runtime.
+      gecko_android: {
+        strict_min_version: '113.0',
+      },
+    } as {
+      gecko: {
+        id: string
+        strict_min_version: string
+        data_collection_permissions: { required: ['none'] }
+      }
     },
   }),
 })
