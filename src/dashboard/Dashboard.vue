@@ -202,6 +202,7 @@ const handleSeasonChange = async (show: Show, delta: number) => {
 }
 
 const handleNotifyToggle = async (item: TrackedMedia) => {
+  if (item.status === 'completed' || item.status === 'dropped') return
   await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
 }
 
@@ -624,16 +625,22 @@ const stopTitleMarquee = (event: Event) => {
                 <button
                   type="button"
                   class="link-badge notify-badge"
-                  :class="{ 'is-on': isNotifyEnabled(item), 'is-off': !isNotifyEnabled(item) }"
-                  :aria-pressed="isNotifyEnabled(item)"
+                  :class="{
+                    'is-on': isNotifyEnabled(item) && item.status !== 'completed' && item.status !== 'dropped',
+                    'is-off': !isNotifyEnabled(item) || item.status === 'completed' || item.status === 'dropped',
+                  }"
+                  :disabled="item.status === 'completed' || item.status === 'dropped'"
+                  :aria-pressed="isNotifyEnabled(item) && item.status !== 'completed' && item.status !== 'dropped'"
                   :title="
-                    isMovie(item)
-                      ? isNotifyEnabled(item)
-                        ? 'Inactivity notifications on'
-                        : 'Inactivity notifications off'
-                      : isNotifyEnabled(item)
-                        ? 'Notifications on'
-                        : 'Notifications off'
+                    item.status === 'completed' || item.status === 'dropped'
+                      ? 'Notifications are off for completed and dropped titles'
+                      : isMovie(item)
+                        ? isNotifyEnabled(item)
+                          ? 'Inactivity notifications on'
+                          : 'Inactivity notifications off'
+                        : isNotifyEnabled(item)
+                          ? 'Notifications on'
+                          : 'Notifications off'
                   "
                   @click="handleNotifyToggle(item)"
                 >
@@ -1372,6 +1379,16 @@ html, body {
 .notify-badge.is-off:hover {
   color: var(--text-secondary);
   border-color: var(--text-muted);
+}
+
+.notify-badge:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notify-badge:disabled:hover {
+  color: var(--text-muted);
+  border-color: var(--border);
 }
 
 .card-title {
