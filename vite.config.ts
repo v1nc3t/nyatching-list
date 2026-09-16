@@ -15,6 +15,9 @@ const patchFirefoxManifest = (parsed: Record<string, any>) => {
     }
   }
 
+  parsed.browser_specific_settings ??= {}
+  parsed.browser_specific_settings.gecko_android ??= { strict_min_version: '113.0' }
+
   if (Array.isArray(parsed.web_accessible_resources)) {
     parsed.web_accessible_resources = parsed.web_accessible_resources
       .filter((entry: Record<string, any>) => {

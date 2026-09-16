@@ -213,6 +213,8 @@ const handleSave = async () => {
   border-radius: 12px;
   padding: 1.25rem 1.4rem;
   width: 380px;
+  max-width: calc(100vw - 2rem);
+  box-sizing: border-box;
   color: var(--text-primary);
   box-shadow: 0 8px 24px var(--shadow);
 }

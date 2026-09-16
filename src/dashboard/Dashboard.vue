@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import {
   TrackedMedia,
   Show,
@@ -38,6 +38,7 @@ const { theme, toggleTheme } = useTheme()
 // Settings & Notification Drawer State
 const isSettingsOpen = ref(false)
 const isNotificationsOpen = ref(false)
+const openSelectKey = ref<string | null>(null)
 const notificationLogs = ref<NotificationItem[]>([])
 const linkEditItem = ref<TrackedMedia | null>(null)
 
@@ -86,6 +87,16 @@ const openNotificationLog = async () => {
   isNotificationsOpen.value = true
 }
 
+const closeSelects = (event: MouseEvent) => {
+  if (!(event.target as HTMLElement).closest('.select')) {
+    openSelectKey.value = null
+  }
+}
+
+const toggleSelect = (key: string) => {
+  openSelectKey.value = openSelectKey.value === key ? null : key
+}
+
 onMounted(() => {
   loadMedia().then(() => {
     syncReleasedEpisodeCaps().catch(() => {})
@@ -103,6 +114,12 @@ onMounted(() => {
       notificationLogs.value = (changes.nyatching_notification_log.newValue as NotificationItem[]) || []
     }
   })
+
+  document.addEventListener('click', closeSelects)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeSelects)
 })
 
 // Unread Notification Count
@@ -258,6 +275,7 @@ const handleMinutesInput = async (event: Event, movie: Movie) => {
 }
 
 const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) => {
+  openSelectKey.value = null
   if (isShow(item)) {
     const updates: Partial<Show> & { id: string } = { id: item.id, status: newStatus }
 
@@ -515,8 +533,8 @@ const stopTitleMarquee = (event: Event) => {
           </div>
 
           <!-- Custom Toolbar Status Dropdown -->
-          <div class="select toolbar-select">
-            <div class="selected">
+          <div class="select toolbar-select" :class="{ 'is-open': openSelectKey === 'filter' }">
+            <div class="selected" @click.stop="toggleSelect('filter')">
               <span>{{ formatStatus(statusFilter) }}</span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -535,7 +553,7 @@ const stopTitleMarquee = (event: Event) => {
                 :key="st"
                 class="option-item"
                 :class="{ active: statusFilter === st }"
-                @click="statusFilter = st"
+                @click="statusFilter = st; openSelectKey = null"
               >
                 {{ formatStatus(st) }}
               </label>
@@ -552,7 +570,7 @@ const stopTitleMarquee = (event: Event) => {
       </div>
 
       <div v-else class="media-grid">
-        <article v-for="item in filteredMedia" :key="item.id" class="media-card">
+        <article v-for="item in filteredMedia" :key="item.id" class="media-card" :class="{ 'is-select-open': openSelectKey === item.id }">
           <div class="card-top">
             <span class="type-badge" :class="item.mediaType">{{ item.mediaType }}</span>
             <button class="delete-btn" title="Delete" @click="handleDelete(item.id)">
@@ -721,8 +739,8 @@ const stopTitleMarquee = (event: Event) => {
             <!-- Side-by-Side Status Row -->
             <div class="status-row-box">
               <span class="status-label">Status</span>
-              <div class="select">
-                <div class="selected">
+              <div class="select" :class="{ 'is-open': openSelectKey === item.id }">
+                <div class="selected" @click.stop="toggleSelect(item.id)">
                   <span>{{ formatStatus(item.status) }}</span>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1235,7 +1253,8 @@ html, body {
   z-index: 1;
 }
 
-.media-card:hover {
+.media-card:hover,
+.media-card.is-select-open {
   transform: translateY(-2px);
   border-color: var(--accent);
   z-index: 10;
@@ -1649,14 +1668,14 @@ html, body {
   z-index: 100;
 }
 
-.select:hover > .options {
+.select.is-open > .options {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   transform: translateY(0);
 }
 
-.select:hover > .selected .arrow {
+.select.is-open > .selected .arrow {
   transform: rotate(0deg);
 }
 
@@ -1725,5 +1744,66 @@ html, body {
 .footer-divider {
   font-size: 0.75rem;
   color: var(--border);
+}
+
+@media (max-width: 640px) {
+  .navbar,
+  .content {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .navbar {
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
+    gap: 0.75rem;
+  }
+
+  .brand h1 {
+    font-size: 1.05rem;
+  }
+
+  .content {
+    padding-top: 1.15rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .stat-value {
+    font-size: 1.55rem;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .search-box {
+    min-width: 0;
+  }
+
+  .filter-group {
+    flex-wrap: wrap;
+  }
+
+  .segmented {
+    flex: 1;
+  }
+
+  .media-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notif-drawer {
+    width: 100%;
+    max-width: 100vw;
+  }
 }
 </style>

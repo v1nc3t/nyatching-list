@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import browser from 'webextension-polyfill'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
@@ -18,13 +18,15 @@ import {
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
 
-// Open Dashboard Handler
 const openDashboard = async () => {
   try {
     await browser.runtime.openOptionsPage()
   } catch {
-    window.open(browser.runtime.getURL('src/dashboard/dashboard.html'))
+    await browser.tabs.create({
+      url: browser.runtime.getURL('src/dashboard/dashboard.html'),
+    })
   }
+  window.close()
 }
 
 // State
@@ -40,6 +42,7 @@ const formType = ref<'show' | 'movie'>('show')
 const formTitle = ref('')
 const formUrl = ref('')
 const formStatus = ref<MediaStatus>('watching')
+const isStatusOpen = ref(false)
 const formSeason = ref(1)
 const formEpisode = ref(1)
 const formMinutes = ref(0)
@@ -61,8 +64,9 @@ let debounceTimer: ReturnType<typeof setTimeout>
 // Auto-detect Active Tab if on IMDb Title Page
 const detectImdbActiveTab = async (autoOpenModal = true) => {
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
-    if (!tab || !tab.url) return
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true })
+    const tab = tabs[0] ?? (await browser.tabs.query({ active: true }))[0]
+    if (!tab?.url) return
 
     const imdbMatch = tab.url.match(/\/title\/(tt\d+)/i)
     if (imdbMatch && imdbMatch[1]) {
@@ -310,12 +314,22 @@ const refreshCount = async () => {
   mediaCount.value = media.length
 }
 
+const closeStatusSelect = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  if (!target.closest('.dropdown-group')) isStatusOpen.value = false
+}
+
 onMounted(() => {
   refreshCount()
   detectImdbActiveTab(true)
   onMediaStorageChange((updatedList) => {
     mediaCount.value = updatedList.length
   })
+  document.addEventListener('click', closeStatusSelect)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeStatusSelect)
 })
 
 const closeModal = () => {
@@ -337,6 +351,7 @@ const closeModal = () => {
   suggestions.value = []
   showSuggestions.value = false
   isSelectingSuggestion.value = false
+  isStatusOpen.value = false
   errorMessage.value = ''
 }
 
@@ -351,6 +366,7 @@ const openModal = () => {
 
 const setStatus = (status: MediaStatus) => {
   formStatus.value = status
+  isStatusOpen.value = false
   if (status === 'completed') {
     applyCompletedProgress()
   }
@@ -625,8 +641,8 @@ const handleAddMediaSubmit = async () => {
 
         <div class="form-group dropdown-group">
           <label>Initial Status</label>
-          <div class="select">
-            <div class="selected">
+          <div class="select" :class="{ 'is-open': isStatusOpen }">
+            <div class="selected" @click.stop="isStatusOpen = !isStatusOpen">
               <span>{{ formatStatus(formStatus) }}</span>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -867,7 +883,9 @@ body {
   margin: 0;
   padding: 0;
   width: 320px;
-  overflow: hidden;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
   scrollbar-width: none;
   background: var(--bg);
   color: var(--text-primary);
@@ -881,6 +899,15 @@ body::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
+
+/* Firefox Android opens the action popup as a full-screen overlay. */
+@media (min-width: 321px) {
+  html,
+  body {
+    width: 100%;
+    min-height: 100%;
+  }
+}
 </style>
 
 <style scoped>
@@ -888,14 +915,13 @@ body::-webkit-scrollbar {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: 320px;
+  width: 100%;
   min-height: 100%;
   padding: 0;
   background-color: var(--bg);
   color: var(--text-primary);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   transition: background-color 0.15s ease, color 0.15s ease;
-  overflow: hidden;
 }
 
 .popup-root * {
@@ -1328,14 +1354,14 @@ body::-webkit-scrollbar {
   z-index: 100;
 }
 
-.select:hover > .options {
+.select.is-open > .options {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   transform: translateY(0);
 }
 
-.select:hover > .selected .arrow {
+.select.is-open > .selected .arrow {
   transform: rotate(0deg);
 }
 
@@ -1467,5 +1493,13 @@ body::-webkit-scrollbar {
 .footer-divider {
   font-size: 0.75rem;
   color: var(--border);
+}
+
+@media (min-width: 321px) {
+  .popup-root {
+    min-height: 100dvh;
+    max-width: 28rem;
+    margin: 0 auto;
+  }
 }
 </style>
