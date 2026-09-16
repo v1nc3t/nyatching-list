@@ -14,7 +14,6 @@ import {
   TMDBSuggestion,
   TMDBShowInfo,
 } from '../services/tmdb'
-import { checkShowReleases } from '../background/release-poll'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -436,14 +435,7 @@ const handleAddMediaSubmit = async () => {
   }
 
   try {
-    const added = await addMedia(payload)
-    if (
-      added.mediaType === 'show' &&
-      (added.status === 'waiting' || added.status === 'watching') &&
-      added.tmdbId
-    ) {
-      checkShowReleases({ showId: added.id }).catch(() => {})
-    }
+    await addMedia(payload)
     closeModal()
   } catch (err) {
     errorMessage.value = (err as Error).message

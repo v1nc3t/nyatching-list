@@ -31,7 +31,6 @@ import {
   resolveCompletedMovieProgress,
   TMDBShowInfo,
 } from '../services/tmdb'
-import { checkShowReleases } from '../background/release-poll'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -202,10 +201,6 @@ const handleSeasonChange = async (show: Show, delta: number) => {
   await updateMedia(updates)
 }
 
-const requestReleaseCheck = (showId: string) => {
-  checkShowReleases({ showId }).catch(() => {})
-}
-
 const handleNotifyToggle = async (item: TrackedMedia) => {
   await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
 }
@@ -280,9 +275,6 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
     }
 
     await updateMedia(updates)
-    if ((newStatus === 'waiting' || newStatus === 'watching') && item.tmdbId) {
-      requestReleaseCheck(item.id)
-    }
     return
   }
 
