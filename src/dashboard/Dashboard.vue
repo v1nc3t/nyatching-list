@@ -202,9 +202,12 @@ const handleSeasonChange = async (show: Show, delta: number) => {
 }
 
 const handleNotifyToggle = async (item: TrackedMedia) => {
-  if (item.status === 'completed' || item.status === 'dropped') return
+  if (notifyLocked(item)) return
   await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
 }
+
+const notifyLocked = (item: TrackedMedia) =>
+  item.status === 'completed' || item.status === 'dropped'
 
 // Handlers for Movie
 const handleMinutesChange = async (movie: Movie, delta: number) => {
@@ -625,14 +628,11 @@ const stopTitleMarquee = (event: Event) => {
                 <button
                   type="button"
                   class="link-badge notify-badge"
-                  :class="{
-                    'is-on': isNotifyEnabled(item) && item.status !== 'completed' && item.status !== 'dropped',
-                    'is-off': !isNotifyEnabled(item) || item.status === 'completed' || item.status === 'dropped',
-                  }"
-                  :disabled="item.status === 'completed' || item.status === 'dropped'"
-                  :aria-pressed="isNotifyEnabled(item) && item.status !== 'completed' && item.status !== 'dropped'"
+                  :class="{ 'is-on': isNotifyEnabled(item) && !notifyLocked(item), 'is-off': !isNotifyEnabled(item) || notifyLocked(item) }"
+                  :disabled="notifyLocked(item)"
+                  :aria-pressed="isNotifyEnabled(item) && !notifyLocked(item)"
                   :title="
-                    item.status === 'completed' || item.status === 'dropped'
+                    notifyLocked(item)
                       ? 'Notifications are off for completed and dropped titles'
                       : isMovie(item)
                         ? isNotifyEnabled(item)
