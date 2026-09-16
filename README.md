@@ -18,20 +18,22 @@ A browser extension that helps you keep track of TV shows and movies you are wat
 | Platform | Link |
 | --- | --- |
 | **Chrome / Brave / Edge** | [Chrome Web Store](https://chromewebstore.google.com/detail/nyatching-list/lfclngikmpcnhmgmakapkcmlpkbgjcna) |
-| **Firefox** | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/nyatching-list/) |
+| **Firefox (desktop and Android)** | [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/nyatching-list/) |
+
+Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 
 ---
 
 ## Features
 
-- **Watchlist** — Save shows and movies with a status: watching, waiting, completed, or dropped
-- **Progress tracking** — Track season/episode for shows, and minutes watched for movies
-- **Search** — Find titles with autocomplete powered by [TMDB](https://www.themoviedb.org/)
-- **IMDb quick add** — Open the extension on an IMDb title page to pre-fill the form
-- **Dashboard** — Browse, filter, and manage your full list in a dedicated tab
-- **Notifications** — Desktop reminders for new episodes or seasons, and when you have not updated a title in a while
-- **Dark / light theme** — Switch themes from the popup or dashboard
-- **Local storage** — Your list stays on your device
+- **Watchlist:** Save shows and movies with a status: watching, waiting, completed, or dropped
+- **Progress tracking:** Track season/episode for shows, and minutes watched for movies
+- **Search:** Find titles with autocomplete powered by [TMDB](https://www.themoviedb.org/)
+- **IMDb quick add:** Open the extension on an IMDb title page to pre-fill the form
+- **Dashboard:** Browse, filter, and manage your full list in a dedicated tab
+- **Notifications:** Desktop reminders for new episodes or seasons, and when you have not updated a title in a while
+- **Dark / light theme:** Switch themes from the popup or dashboard
+- **Local storage:** Your list stays on your device
 
 ---
 
@@ -48,9 +50,9 @@ If you are already on an IMDb title page, the form can fill itself in for you.
 
 ### Track progress
 
-- **Shows** — Update the current season and episode from the dashboard
-- **Movies** — Update how many minutes you have watched
-- **Notify** — Turn reminders on or off per title on the dashboard card
+- **Shows:** Update the current season and episode from the dashboard
+- **Movies:** Update how many minutes you have watched
+- **Notify:** Turn reminders on or off per title on the dashboard card
 
 ### Dashboard
 
@@ -65,8 +67,8 @@ Open the dashboard from the popup to:
 
 Watching and waiting titles with **Notify** on can send desktop reminders. Click a toast to open your watching link, or the dashboard if none is set.
 
-- **Shows** — New episodes or seasons from TMDB, plus inactivity reminders
-- **Movies** — Inactivity reminders only
+- **Shows:** New episodes or seasons from TMDB, plus inactivity reminders
+- **Movies:** Inactivity reminders only
 
 TMDB checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
 
@@ -132,7 +134,28 @@ npm run build:firefox  # → build-firefox/
 ```
 
 - **Chrome:** run `npm run dev`, then load `build/` as an unpacked extension.
-- **Firefox:** run `npm run dev:firefox`, then load `build-firefox/manifest.json` from `about:debugging`. Firefox MV3 blocks scripts from localhost, so HMR is not available — use watch mode and click **Reload** on the temporary add-on after changes.
+- **Firefox:** run `npm run dev:firefox`, then load `build-firefox/manifest.json` from `about:debugging`. Firefox MV3 blocks scripts from localhost, so HMR is not available. Use watch mode and click **Reload** on the temporary add-on after changes.
+
+### Firefox for Android
+
+Shrinking desktop Firefox only checks layout. It does not run the Android extension host.
+
+To test the real mobile add-on on a PC:
+
+1. Install Android Studio, create a phone emulator (AVD), and start it.
+2. Install Firefox (or Nightly) in the emulator.
+3. Install `adb` if it is not on your PATH (`sudo apt install adb` on Debian/Kali, or use `Android/Sdk/platform-tools/adb` from Android Studio).
+4. Confirm the emulator shows up, then build and load:
+
+```bash
+adb devices
+npm run build:firefox
+npx web-ext run -t firefox-android --source-dir build-firefox --adb-device emulator-5554 --firefox-apk org.mozilla.firefox
+```
+
+Use the id from `adb devices` if it is not `emulator-5554`. Use `org.mozilla.fenix` for Nightly. If `web-ext` still cannot find `adb`, pass `--adb-bin /path/to/adb`.
+
+Open the add-on from the Firefox menu under Add-ons. Inspect it from desktop Firefox at `about:debugging`.
 
 ---
 
@@ -178,4 +201,4 @@ Movie and TV metadata and posters come from [The Movie Database (TMDB)](https://
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
