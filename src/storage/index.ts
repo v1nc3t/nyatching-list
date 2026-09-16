@@ -10,29 +10,10 @@ import {
   AppSettings,
 } from '../types';
 
-export interface StorageSchema {
-  nyatching_list_media: TrackedMedia[];
-  nyatching_notification_log: NotificationItem[];
-  nyatching_settings: AppSettings;
-}
-
 const STORAGE_KEY = 'nyatching_list_media' as const;
 const NOTIFICATIONS_STORAGE_KEY = 'nyatching_notification_log' as const;
 const SETTINGS_STORAGE_KEY = 'nyatching_settings' as const;
-
 const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'dropped'];
-
-export const TIME_INTERVAL_OPTIONS = [
-  { label: 'Never', hours: -1, days: -1 },
-  { label: '1 Day', hours: 24, days: 1 },
-  { label: '2 Days', hours: 48, days: 2 },
-  { label: '1 Week', hours: 168, days: 7 },
-  { label: '2 Weeks', hours: 336, days: 14 },
-  { label: '1 Month', hours: 720, days: 30 },
-  { label: '2 Months', hours: 1440, days: 60 },
-  { label: '6 Months', hours: 4320, days: 180 },
-  { label: '1 Year', hours: 8760, days: 365 },
-] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   newSeasonCheckIntervalHours: 24,
@@ -92,16 +73,6 @@ export async function getAllMedia(): Promise<TrackedMedia[]> {
   return (data[STORAGE_KEY] as TrackedMedia[]) ?? [];
 }
 
-export async function getShows(): Promise<Show[]> {
-  const media = await getAllMedia();
-  return media.filter(isShow);
-}
-
-export async function getMovies(): Promise<Movie[]> {
-  const media = await getAllMedia();
-  return media.filter(isMovie);
-}
-
 export async function getMediaById(id: string): Promise<TrackedMedia | undefined> {
   const media = await getAllMedia();
   return media.find((item) => item.id === id);
@@ -125,48 +96,6 @@ export async function saveMedia(item: TrackedMedia): Promise<void> {
   }
 
   await setStorageData({ [STORAGE_KEY]: mediaList });
-}
-
-// ==========================================
-// QUERY HELPER
-// ==========================================
-
-export interface MediaQueryOptions {
-  status?: MediaStatus;
-  mediaType?: 'show' | 'movie';
-  searchTerm?: string;
-  sortBy?: 'updatedAt' | 'title';
-  sortOrder?: 'asc' | 'desc';
-}
-
-export async function queryMedia(options: MediaQueryOptions = {}): Promise<TrackedMedia[]> {
-  let list = await getAllMedia();
-
-  if (options.mediaType) {
-    list = list.filter((item) => item.mediaType === options.mediaType);
-  }
-
-  if (options.status) {
-    list = list.filter((item) => item.status === options.status);
-  }
-
-  if (options.searchTerm && options.searchTerm.trim() !== '') {
-    const term = options.searchTerm.toLowerCase().trim();
-    list = list.filter((item) => item.title.toLowerCase().includes(term));
-  }
-
-  const sortBy = options.sortBy ?? 'updatedAt';
-  const sortOrder = options.sortOrder ?? 'desc';
-
-  return list.sort((a, b) => {
-    let comparison = 0;
-    if (sortBy === 'updatedAt') {
-      comparison = a.updatedAt - b.updatedAt;
-    } else if (sortBy === 'title') {
-      comparison = a.title.localeCompare(b.title);
-    }
-    return sortOrder === 'desc' ? -comparison : comparison;
-  });
 }
 
 // ==========================================
@@ -355,11 +284,6 @@ export async function deleteMedia(id: string): Promise<void> {
   const mediaList = await getAllMedia();
   const filteredList = mediaList.filter((item) => item.id !== id);
   await setStorageData({ [STORAGE_KEY]: filteredList });
-}
-
-export async function clearAllMedia(): Promise<void> {
-  if (!isStorageAvailable()) return;
-  await browser.storage.local.remove(STORAGE_KEY);
 }
 
 // ==========================================

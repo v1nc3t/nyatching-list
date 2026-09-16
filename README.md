@@ -68,15 +68,15 @@ Watching and waiting titles with **Notify** on can send desktop reminders. Click
 - **Shows** — New episodes or seasons from TMDB, plus inactivity reminders
 - **Movies** — Inactivity reminders only
 
-TMDB checks run at **12:00 AM**. If the browser was closed at that time, the check runs when it next opens.
+TMDB checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
+
+Inactivity reminders fire when the chosen time has passed since you last changed a show’s episode or a movie’s minutes watched, not at the episode check. Completed and dropped titles are not reminded.
 
 In settings you can control:
 
 - How often to look up shows on TMDB
 - How long without a progress update before an inactivity reminder
 - Turning either reminder off entirely (`Never`)
-
-Inactivity is counted from the last time you changed a show’s episode or a movie’s minutes watched. Completed and dropped titles are not reminded.
 
 ---
 

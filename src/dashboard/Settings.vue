@@ -3,7 +3,7 @@ import { ref, onMounted, computed, onUnmounted } from 'vue'
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings, saveSettings } from '../storage'
-import { formatNextCheckLabel, nextCheckTimestamp, scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
+import { formatNextCheckLabel, nextCheckTimestamp, scheduleAllAlarms } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -109,7 +109,7 @@ const handleSave = async () => {
       })
     } catch (error) {
       console.error('[Nyatching List] Background did not acknowledge settings:', error)
-      await scheduleReleaseCheckAlarm(saved)
+      await scheduleAllAlarms(saved)
     }
 
     emit('close')
@@ -134,7 +134,7 @@ const handleSave = async () => {
           <label>New Episode Check Frequency</label>
           <p class="form-hint">
             How often to look up watching and waiting shows on TMDB for new episodes or seasons.
-            Checks run at 12:00 AM. {{ nextCheckHint }} If the browser is closed, the check runs when it next opens.
+            Checks run at 12:00 PM. {{ nextCheckHint }} If the browser is closed, the check runs when it next opens.
           </p>
           <div class="select select-season" :class="{ 'is-open': isOpenSeason }">
             <div class="selected" @click="toggleSeasonDropdown">
@@ -160,7 +160,7 @@ const handleSave = async () => {
         <div class="form-group">
           <label>Inactivity Reminder Frequency</label>
           <p class="form-hint">
-            Remind you when you have not updated a watching or waiting title for this long.
+            Sent X time after your last episode or minutes update, not at the episode check.
             Movies only use this reminder.
           </p>
           <div class="select select-stall" :class="{ 'is-open': isOpenStall }">

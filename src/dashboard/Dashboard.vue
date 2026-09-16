@@ -31,7 +31,6 @@ import {
   resolveCompletedMovieProgress,
   TMDBShowInfo,
 } from '../services/tmdb'
-import { checkShowReleases } from '../background/release-poll'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -202,13 +201,13 @@ const handleSeasonChange = async (show: Show, delta: number) => {
   await updateMedia(updates)
 }
 
-const requestReleaseCheck = (showId: string) => {
-  checkShowReleases({ showId }).catch(() => {})
-}
-
 const handleNotifyToggle = async (item: TrackedMedia) => {
+  if (notifyLocked(item)) return
   await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
 }
+
+const notifyLocked = (item: TrackedMedia) =>
+  item.status === 'completed' || item.status === 'dropped'
 
 // Handlers for Movie
 const handleMinutesChange = async (movie: Movie, delta: number) => {
@@ -280,9 +279,6 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
     }
 
     await updateMedia(updates)
-    if ((newStatus === 'waiting' || newStatus === 'watching') && item.tmdbId) {
-      requestReleaseCheck(item.id)
-    }
     return
   }
 
@@ -632,16 +628,19 @@ const stopTitleMarquee = (event: Event) => {
                 <button
                   type="button"
                   class="link-badge notify-badge"
-                  :class="{ 'is-on': isNotifyEnabled(item), 'is-off': !isNotifyEnabled(item) }"
-                  :aria-pressed="isNotifyEnabled(item)"
+                  :class="{ 'is-on': isNotifyEnabled(item) && !notifyLocked(item), 'is-off': !isNotifyEnabled(item) || notifyLocked(item) }"
+                  :disabled="notifyLocked(item)"
+                  :aria-pressed="isNotifyEnabled(item) && !notifyLocked(item)"
                   :title="
-                    isMovie(item)
-                      ? isNotifyEnabled(item)
-                        ? 'Inactivity notifications on'
-                        : 'Inactivity notifications off'
-                      : isNotifyEnabled(item)
-                        ? 'Notifications on'
-                        : 'Notifications off'
+                    notifyLocked(item)
+                      ? 'Notifications are off for completed and dropped titles'
+                      : isMovie(item)
+                        ? isNotifyEnabled(item)
+                          ? 'Inactivity notifications on'
+                          : 'Inactivity notifications off'
+                        : isNotifyEnabled(item)
+                          ? 'Notifications on'
+                          : 'Notifications off'
                   "
                   @click="handleNotifyToggle(item)"
                 >
@@ -1380,6 +1379,16 @@ html, body {
 .notify-badge.is-off:hover {
   color: var(--text-secondary);
   border-color: var(--text-muted);
+}
+
+.notify-badge:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notify-badge:disabled:hover {
+  color: var(--text-muted);
+  border-color: var(--border);
 }
 
 .card-title {
