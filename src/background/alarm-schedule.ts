@@ -52,11 +52,7 @@ export const scheduleReleaseCheckAlarm = async (
 ): Promise<{ when: number | null }> => {
   const resolved = settings ?? (await getSettings())
   const when = nextCheckTimestamp(resolved)
-  if (when === null) {
-    await browser.alarms.clear(ALARM_NAME)
-    console.log('[Nyatching Background] Episode checks disabled (Never).')
-    return { when: null }
-  }
+  if (!when) console.log('[Nyatching Background] Episode checks disabled (Never).')
   await setAlarm(ALARM_NAME, when)
   return { when }
 }

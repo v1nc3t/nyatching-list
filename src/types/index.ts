@@ -4,8 +4,6 @@ export interface AppSettings {
   newSeasonCheckIntervalHours: number // -1 means Never
   stallReminderDays: number // -1 means Never
   lastReleaseCheckAt?: number
-  lastTmdbCheckAt?: number
-  enableSystemNotifications?: boolean // Optional / Deprecated
 }
 
 export interface BaseMedia {

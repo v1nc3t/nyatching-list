@@ -22,21 +22,11 @@ export interface ReleaseCheckResult {
   updates: Partial<Show>
 }
 
-export const isNotifiableShow = (media: TrackedMedia): media is Show => {
-  return (
-    isShow(media) &&
-    isNotifyEnabled(media) &&
-    (media.status === 'watching' || media.status === 'waiting') &&
-    Boolean(media.tmdbId)
-  )
-}
+export const isNotifiableForStall = (media: TrackedMedia): boolean =>
+  isNotifyEnabled(media) && (media.status === 'watching' || media.status === 'waiting')
 
-export const isNotifiableForStall = (media: TrackedMedia): boolean => {
-  return (
-    isNotifyEnabled(media) &&
-    (media.status === 'watching' || media.status === 'waiting')
-  )
-}
+export const isNotifiableShow = (media: TrackedMedia): media is Show =>
+  isShow(media) && isNotifiableForStall(media) && Boolean(media.tmdbId)
 
 export const notifyAtOnDate = (now: number = Date.now()): number => {
   const date = new Date(now)
@@ -115,16 +105,6 @@ export const earliestStallDueAt = (
   return soonest
 }
 
-export const isTmdbCheckDue = (
-  seasonIntervalHours: number,
-  lastTmdbCheckAt: number | undefined,
-  now: number = Date.now()
-): boolean => {
-  if (seasonIntervalHours <= 0) return false
-  if (!lastTmdbCheckAt) return true
-  return now - lastTmdbCheckAt >= seasonIntervalHours * 60 * 60 * 1000
-}
-
 export const lastMediaActivityAt = (media: TrackedMedia): number =>
   media.lastProgressUpdate || media.createdAt || 0
 
@@ -186,13 +166,6 @@ export const buildShowMetaUpdates = (
   return updates
 }
 
-export const getLastNotified = (show: Show): TMDBAiredEpisode | null => {
-  if (typeof show.lastNotifiedSeason !== 'number' || typeof show.lastNotifiedEpisode !== 'number') {
-    return null
-  }
-  return { season: show.lastNotifiedSeason, episode: show.lastNotifiedEpisode }
-}
-
 export const formatEpisodeLabel = (latest: TMDBAiredEpisode): string =>
   `Season ${latest.season} Episode ${latest.episode}`
 
@@ -209,9 +182,6 @@ export const nextEpisodeToWatch = (
 
 const hasAired = (latest: TMDBAiredEpisode, target: TMDBAiredEpisode): boolean =>
   compareAiredEpisodes(latest, target) >= 0
-
-const sameEpisode = (a: TMDBAiredEpisode | null, b: TMDBAiredEpisode): boolean =>
-  Boolean(a && a.season === b.season && a.episode === b.episode)
 
 const watchHint = (media: TrackedMedia): string =>
   media.watchingUrl?.trim() ? ' Click to open your watching link.' : ''
@@ -248,36 +218,24 @@ export const decideReleaseAction = (
   show: Show,
   latest: TMDBAiredEpisode | null,
   metaUpdates: Partial<Show>,
-  options: { remindIfBehind?: boolean; seasonEpisodeCount?: number } = {}
+  seasonEpisodeCount?: number
 ): ReleaseCheckResult => {
   if (!latest) {
     return { notify: false, notice: null, updates: metaUpdates }
   }
 
-  const next = nextEpisodeToWatch(show, options.seasonEpisodeCount)
-
+  const next = nextEpisodeToWatch(show, seasonEpisodeCount)
   if (!hasAired(latest, next)) {
-    return {
-      notify: false,
-      notice: null,
-      updates: metaUpdates,
-    }
+    return { notify: false, notice: null, updates: metaUpdates }
   }
 
-  const lastNotified = getLastNotified(show)
-  const alreadyTold = sameEpisode(lastNotified, next)
-
-  if (!alreadyTold || options.remindIfBehind) {
-    return {
-      notify: true,
-      notice: buildReleaseNotice(show, next),
-      updates: {
-        ...metaUpdates,
-        lastNotifiedSeason: next.season,
-        lastNotifiedEpisode: next.episode,
-      },
-    }
+  return {
+    notify: true,
+    notice: buildReleaseNotice(show, next),
+    updates: {
+      ...metaUpdates,
+      lastNotifiedSeason: next.season,
+      lastNotifiedEpisode: next.episode,
+    },
   }
-
-  return { notify: false, notice: null, updates: metaUpdates }
 }
