@@ -28,6 +28,7 @@ import {
 } from '../services/aired-episode'
 
 export const RELEASE_NOTIFICATION_PREFIX = 'nyatching_rel_'
+export const STALL_NOTIFICATION_PREFIX = 'nyatching_stall_'
 const LEGACY_RELEASE_NOTIFICATION_PREFIX = 'nyatching_rel:'
 
 export interface ReleaseCheckSummary {
@@ -40,12 +41,17 @@ export interface ReleaseCheckSummary {
 export const buildReleaseNotificationId = (showId: string): string =>
   `${RELEASE_NOTIFICATION_PREFIX}${encodeURIComponent(showId)}_${Date.now()}`
 
+export const buildStallNotificationId = (showId: string): string =>
+  `${STALL_NOTIFICATION_PREFIX}${encodeURIComponent(showId)}_${Date.now()}`
+
 export const parseReleaseNotificationShowId = (notificationId: string): string | null => {
   const rest = notificationId.startsWith(LEGACY_RELEASE_NOTIFICATION_PREFIX)
     ? notificationId.slice(LEGACY_RELEASE_NOTIFICATION_PREFIX.length)
     : notificationId.startsWith(RELEASE_NOTIFICATION_PREFIX)
       ? notificationId.slice(RELEASE_NOTIFICATION_PREFIX.length)
-      : null
+      : notificationId.startsWith(STALL_NOTIFICATION_PREFIX)
+        ? notificationId.slice(STALL_NOTIFICATION_PREFIX.length)
+        : null
   if (!rest) return null
 
   const sep = Math.max(rest.lastIndexOf('_'), rest.lastIndexOf(':'))
@@ -179,11 +185,36 @@ const processStallReminder = async (
 ): Promise<{ notified: boolean; note?: string }> => {
   const decision = decideStallAction(media, stallReminderDays)
   if (decision.notify && decision.notice) {
-    await sendReleaseNotification(media, decision.notice)
+    await addNotificationLog({
+      showId: media.id,
+      title: decision.notice.logTitle,
+      message: decision.notice.logMessage,
+      posterPath: media.posterPath,
+      watchingUrl: decision.notice.watchingUrl,
+    })
+    const shown = await createOsNotification({
+      id: buildStallNotificationId(media.id),
+      title: decision.notice.title,
+      message: decision.notice.message,
+    })
+    if (!shown) {
+      console.error('[Nyatching List] OS notification was not shown for', media.title)
+    }
     await updateMedia({ id: media.id, lastStallNotified: decision.lastStallNotified })
     return { notified: true }
   }
   return { notified: false }
+}
+
+export const checkStallReminders = async (): Promise<void> => {
+  const settings = await getSettings()
+  const stallReminderDays = settings.stallReminderDays ?? 7
+  if (stallReminderDays <= 0) return
+
+  const targets = (await getAllMedia()).filter(isNotifiableForStall)
+  for (const item of targets) {
+    await processStallReminder(item, stallReminderDays)
+  }
 }
 
 export const checkShowReleases = async (
@@ -198,15 +229,13 @@ export const checkShowReleases = async (
 
   const settings = await getSettings()
   const seasonIntervalHours = settings.newSeasonCheckIntervalHours ?? 24
-  const stallReminderDays = settings.stallReminderDays ?? 7
 
-  if (!options.showId && !options.force && seasonIntervalHours <= 0 && stallReminderDays <= 0) {
+  if (!options.showId && !options.force && seasonIntervalHours <= 0) {
     return summary
   }
 
   const mediaList = await getAllMedia()
   const targeted = mediaList.filter((item) => !options.showId || item.id === options.showId)
-  const notifiedIds = new Set<string>()
 
   const tmdbDue =
     seasonIntervalHours > 0 &&
@@ -222,31 +251,14 @@ export const checkShowReleases = async (
       if (result.notified) {
         summary.notifiedCount += 1
         summary.notifiedTitles.push(show.title)
-        notifiedIds.add(show.id)
       } else if (result.note) {
         summary.notes.push(result.note)
       }
     }
     if (!options.showId) {
-      await saveSettings({ lastTmdbCheckAt: Date.now() })
+      await saveSettings({ lastTmdbCheckAt: Date.now(), lastReleaseCheckAt: Date.now() })
     }
-  }
-
-  const stallDue = stallReminderDays > 0 && (Boolean(options.force) || !options.showId)
-  if (stallDue) {
-    const stallTargets = targeted.filter(isNotifiableForStall)
-    if (!tmdbDue) summary.checkedCount += stallTargets.length
-    for (const item of stallTargets) {
-      if (notifiedIds.has(item.id)) continue
-      const result = await processStallReminder(item, stallReminderDays)
-      if (result.notified) {
-        summary.notifiedCount += 1
-        summary.notifiedTitles.push(item.title)
-      }
-    }
-  }
-
-  if (!options.showId) {
+  } else if (!options.showId) {
     await saveSettings({ lastReleaseCheckAt: Date.now() })
   }
 

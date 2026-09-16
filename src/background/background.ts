@@ -4,13 +4,17 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
 }
 
 import browser from 'webextension-polyfill'
-import { getSettings, getMediaById } from '../storage'
+import { getMediaById, getSettings, onMediaStorageChange } from '../storage'
 import { createOsNotificationLocal } from '../utils/notify'
-import { checkShowReleases, parseReleaseNotificationShowId } from './release-poll'
+import { checkShowReleases, checkStallReminders, parseReleaseNotificationShowId } from './release-poll'
 import {
   ALARM_NAME,
+  STALL_ALARM_NAME,
   isMissedScheduledCheck,
+  isMissedStallCheck,
+  scheduleAllAlarms,
   scheduleReleaseCheckAlarm,
+  scheduleStallAlarm,
 } from './alarm-schedule'
 
 export interface SystemMessage {
@@ -26,23 +30,23 @@ export interface SystemMessage {
 export const setupAlarm = async (options: { skipCatchUp?: boolean } = {}): Promise<void> => {
   const settings = await getSettings()
 
-  if (!options.skipCatchUp && isMissedScheduledCheck(settings)) {
-    console.log('[Nyatching Background] Missed today\'s check; running now.')
-    await runScheduledChecks()
-    await scheduleReleaseCheckAlarm(await getSettings())
-    return
+  if (!options.skipCatchUp) {
+    if (isMissedScheduledCheck(settings)) {
+      console.log('[Nyatching Background] Missed episode check; running now.')
+      await checkShowReleases()
+    }
+    if (await isMissedStallCheck(settings)) {
+      console.log('[Nyatching Background] Missed inactivity reminder; running now.')
+      await checkStallReminders()
+    }
   }
 
-  await scheduleReleaseCheckAlarm(settings)
-}
-
-export const runScheduledChecks = async (): Promise<void> => {
-  await checkShowReleases()
+  await scheduleAllAlarms(await getSettings())
 }
 
 if (typeof self !== 'undefined') {
   ;(self as any).checkShowReleases = checkShowReleases
-  ;(self as any).runScheduledChecks = runScheduledChecks
+  ;(self as any).checkStallReminders = checkStallReminders
 }
 
 const openDashboard = async (): Promise<void> => {
@@ -71,8 +75,7 @@ browser.notifications.onClicked.addListener(async (notificationId) => {
   const releaseShowId = parseReleaseNotificationShowId(notificationId)
   const isLegacyRelease =
     notificationId.startsWith('nyatching_show_') ||
-    notificationId.startsWith('nyatching_episode_') ||
-    notificationId.startsWith('nyatching_stall_')
+    notificationId.startsWith('nyatching_episode_')
 
   if (releaseShowId || isLegacyRelease) {
     if (releaseShowId) {
@@ -93,21 +96,26 @@ browser.runtime.onStartup.addListener(async () => {
 })
 
 const handleAlarm = async (alarm: { name: string }): Promise<void> => {
-  if (alarm.name !== ALARM_NAME) return
   try {
-    await runScheduledChecks()
+    if (alarm.name === ALARM_NAME) {
+      await checkShowReleases()
+      await scheduleReleaseCheckAlarm()
+      return
+    }
+    if (alarm.name === STALL_ALARM_NAME) {
+      await checkStallReminders()
+      await scheduleStallAlarm()
+    }
   } catch (error) {
     console.error('[Nyatching Background] Scheduled check failed:', error)
-  } finally {
-    try {
-      await setupAlarm({ skipCatchUp: true })
-    } catch (error) {
-      console.error('[Nyatching Background] Failed to reschedule:', error)
-    }
   }
 }
 
 browser.alarms.onAlarm.addListener((alarm) => handleAlarm(alarm))
+
+onMediaStorageChange(() => {
+  void scheduleStallAlarm()
+})
 
 self.addEventListener('notificationclick', (event) => {
   const notificationEvent = event as Event & {

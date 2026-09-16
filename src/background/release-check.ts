@@ -2,7 +2,7 @@ import { TMDBAiredEpisode, compareAiredEpisodes } from '../services/aired-episod
 import { Show, TrackedMedia, isShow, isMovie, isNotifyEnabled } from '../types'
 
 export const MS_PER_DAY = 24 * 60 * 60 * 1000
-export const CHECK_AT_HOUR = 0
+export const CHECK_AT_HOUR = 12
 export const CHECK_AT_MINUTE = 0
 
 export type ReleaseKind = 'new_season' | 'new_episode' | 'inactivity'
@@ -44,7 +44,7 @@ export const notifyAtOnDate = (now: number = Date.now()): number => {
   return date.getTime()
 }
 
-/** Next local midnight (tomorrow if midnight has already passed today). */
+/** Next local noon (tomorrow if noon has already passed today). */
 export const nextNotifyAt = (now: number = Date.now()): number => {
   const todaySlot = notifyAtOnDate(now)
   if (todaySlot > now) return todaySlot
@@ -55,12 +55,11 @@ export const nextNotifyAt = (now: number = Date.now()): number => {
 
 export const computeNextAlarmWhen = (
   seasonIntervalHours: number,
-  stallReminderDays: number,
   lastReleaseCheckAt: number | undefined,
   now: number = Date.now()
 ): number | null => {
-  const periodInMinutes = resolveAlarmPeriodMinutes(seasonIntervalHours, stallReminderDays)
-  if (periodInMinutes === null) return null
+  if (seasonIntervalHours <= 0) return null
+  const periodInMinutes = Math.max(1, seasonIntervalHours * 60)
 
   let when = nextNotifyAt(now)
   const last = lastReleaseCheckAt ?? 0
@@ -77,37 +76,43 @@ export const computeNextAlarmWhen = (
 
 export const shouldCatchUpMissedCheck = (
   seasonIntervalHours: number,
-  stallReminderDays: number,
   lastReleaseCheckAt: number | undefined,
   now: number = Date.now()
 ): boolean => {
-  const periodInMinutes = resolveAlarmPeriodMinutes(seasonIntervalHours, stallReminderDays)
-  if (periodInMinutes === null) return false
+  if (seasonIntervalHours <= 0) return false
 
   const last = lastReleaseCheckAt ?? 0
   if (last <= 0) return false
 
   const todaySlot = notifyAtOnDate(now)
-  const periodMs = periodInMinutes * 60 * 1000
+  const periodMs = seasonIntervalHours * 60 * 60 * 1000
   return now >= todaySlot && last < todaySlot && now - last >= periodMs
 }
 
-export const resolveAlarmPeriodMinutes = (
-  seasonIntervalHours: number,
+export const stallDueAt = (
+  media: TrackedMedia,
   stallReminderDays: number
 ): number | null => {
-  const candidates: number[] = []
-
-  if (seasonIntervalHours > 0) {
-    candidates.push(seasonIntervalHours * 60)
+  if (stallReminderDays <= 0 || !isNotifiableForStall(media)) return null
+  const lastActivity = lastMediaActivityAt(media)
+  const thresholdMs = stallReminderDays * MS_PER_DAY
+  if (media.lastStallNotified && media.lastStallNotified >= lastActivity) {
+    return media.lastStallNotified + thresholdMs
   }
+  return lastActivity + thresholdMs
+}
 
-  if (stallReminderDays > 0) {
-    candidates.push(24 * 60)
+export const earliestStallDueAt = (
+  mediaList: TrackedMedia[],
+  stallReminderDays: number
+): number | null => {
+  let soonest: number | null = null
+  for (const item of mediaList) {
+    const due = stallDueAt(item, stallReminderDays)
+    if (due === null) continue
+    if (soonest === null || due < soonest) soonest = due
   }
-
-  if (candidates.length === 0) return null
-  return Math.max(1, Math.min(...candidates))
+  return soonest
 }
 
 export const isTmdbCheckDue = (
