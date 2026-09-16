@@ -70,9 +70,7 @@ export const scheduleStallAlarm = async (settings?: AppSettings): Promise<{ when
     await browser.alarms.clear(STALL_ALARM_NAME)
     return { when: null }
   }
-  if (when > Date.now()) {
-    await setAlarm(STALL_ALARM_NAME, when)
-  }
+  await setAlarm(STALL_ALARM_NAME, when)
   return { when }
 }
 

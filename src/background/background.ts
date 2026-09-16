@@ -17,16 +17,21 @@ import {
 } from './alarm-schedule'
 
 const setupAlarm = async (): Promise<void> => {
-  const settings = await getSettings()
-  if (isMissedScheduledCheck(settings)) {
-    console.log('[Nyatching Background] Missed episode check; running now.')
-    await checkShowReleases()
+  try {
+    const settings = await getSettings()
+    if (isMissedScheduledCheck(settings)) {
+      console.log('[Nyatching Background] Missed episode check; running now.')
+      await checkShowReleases()
+    }
+    if (await isMissedStallCheck(settings)) {
+      console.log('[Nyatching Background] Missed inactivity reminder; running now.')
+      await checkStallReminders()
+    }
+  } catch (error) {
+    console.error('[Nyatching Background] Catch-up check failed:', error)
+  } finally {
+    await scheduleAllAlarms()
   }
-  if (await isMissedStallCheck(settings)) {
-    console.log('[Nyatching Background] Missed inactivity reminder; running now.')
-    await checkStallReminders()
-  }
-  await scheduleAllAlarms(await getSettings())
 }
 
 const openDashboard = async (): Promise<void> => {
@@ -67,13 +72,18 @@ browser.alarms.onAlarm.addListener(async (alarm) => {
   try {
     if (alarm.name === ALARM_NAME) {
       await checkShowReleases()
-      await scheduleReleaseCheckAlarm()
     } else if (alarm.name === STALL_ALARM_NAME) {
       await checkStallReminders()
-      await scheduleStallAlarm()
     }
   } catch (error) {
     console.error('[Nyatching Background] Scheduled check failed:', error)
+  } finally {
+    try {
+      if (alarm.name === ALARM_NAME) await scheduleReleaseCheckAlarm()
+      else if (alarm.name === STALL_ALARM_NAME) await scheduleStallAlarm()
+    } catch (error) {
+      console.error('[Nyatching Background] Failed to reschedule:', error)
+    }
   }
 })
 
