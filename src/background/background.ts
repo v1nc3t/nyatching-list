@@ -56,14 +56,16 @@ const openWatchingLinkOrDashboard = async (showId: string | null): Promise<void>
   await openDashboard()
 }
 
-browser.notifications.onClicked.addListener(async (notificationId) => {
-  const mediaId = parseReleaseNotificationShowId(notificationId)
-  const isLegacy =
-    notificationId.startsWith('nyatching_show_') || notificationId.startsWith('nyatching_episode_')
-  if (!mediaId && !isLegacy) return
-  await openWatchingLinkOrDashboard(mediaId)
-  await browser.notifications.clear(notificationId)
-})
+if (browser.notifications?.onClicked) {
+  browser.notifications.onClicked.addListener(async (notificationId) => {
+    const mediaId = parseReleaseNotificationShowId(notificationId)
+    const isLegacy =
+      notificationId.startsWith('nyatching_show_') || notificationId.startsWith('nyatching_episode_')
+    if (!mediaId && !isLegacy) return
+    await openWatchingLinkOrDashboard(mediaId)
+    await browser.notifications.clear(notificationId)
+  })
+}
 
 browser.runtime.onInstalled.addListener(() => setupAlarm())
 browser.runtime.onStartup.addListener(() => setupAlarm())
