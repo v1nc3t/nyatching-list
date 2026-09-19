@@ -17,7 +17,6 @@ const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'drop
 
 export const DEFAULT_SETTINGS: AppSettings = {
   newSeasonCheckIntervalHours: 24,
-  stallReminderDays: 7,
 };
 
 // ==========================================
@@ -53,12 +52,18 @@ async function setStorageData(data: Record<string, unknown>): Promise<void> {
 export const getSettings = async (): Promise<AppSettings> => {
   if (!isStorageAvailable()) return DEFAULT_SETTINGS;
   const result = await browser.storage.local.get(SETTINGS_STORAGE_KEY);
-  return { ...DEFAULT_SETTINGS, ...(result[SETTINGS_STORAGE_KEY] as AppSettings) };
+  const stored = (result[SETTINGS_STORAGE_KEY] ?? {}) as Record<string, unknown>;
+  const { stallReminderDays: _removed, ...rest } = stored;
+  return { ...DEFAULT_SETTINGS, ...rest } as AppSettings;
 };
 
 export const saveSettings = async (settings: Partial<AppSettings>): Promise<AppSettings> => {
   const current = await getSettings();
-  const updated = { ...current, ...settings };
+  const updated: AppSettings = {
+    newSeasonCheckIntervalHours:
+      settings.newSeasonCheckIntervalHours ?? current.newSeasonCheckIntervalHours,
+    lastReleaseCheckAt: settings.lastReleaseCheckAt ?? current.lastReleaseCheckAt,
+  };
   await setStorageData({ [SETTINGS_STORAGE_KEY]: updated });
   return updated;
 };
@@ -158,7 +163,6 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     tmdbId: input.tmdbId,
     createdAt: now,
     updatedAt: now,
-    lastProgressUpdate: now,
   };
 
   let newItem: TrackedMedia;
@@ -180,7 +184,6 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
       currentMinutes: input.currentMinutes ?? 0,
       runtimeMinutes: input.runtimeMinutes,
       releaseYear: input.releaseYear,
-      notify: true,
     };
   }
 
@@ -210,7 +213,6 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
   }
 
   const now = Date.now();
-  let progressChanged = false;
 
   if (isShow(existingItem)) {
     const showUpdates = updates as Partial<Show>;
@@ -224,22 +226,12 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
       throw new Error('[Nyatching List] Episode must be an integer >= 1.');
     }
 
-    if (
-      (showUpdates.currentSeason !== undefined && showUpdates.currentSeason !== existingItem.currentSeason) ||
-      (showUpdates.currentEpisode !== undefined && showUpdates.currentEpisode !== existingItem.currentEpisode)
-    ) {
-      progressChanged = true;
-    }
-
     const updatedShow: Show = {
       ...existingItem,
       ...showUpdates,
       currentSeason: season,
       currentEpisode: episode,
       updatedAt: now,
-      lastProgressUpdate: progressChanged
-        ? now
-        : existingItem.lastProgressUpdate || existingItem.createdAt || now,
     };
 
     await saveMedia(updatedShow);
@@ -254,18 +246,11 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
       throw new Error('[Nyatching List] Current minutes must be a non-negative integer.');
     }
 
-    if (movieUpdates.currentMinutes !== undefined && movieUpdates.currentMinutes !== existingItem.currentMinutes) {
-      progressChanged = true;
-    }
-
     const updatedMovie: Movie = {
       ...existingItem,
       ...movieUpdates,
       currentMinutes: minutes,
       updatedAt: now,
-      lastProgressUpdate: progressChanged
-        ? now
-        : existingItem.lastProgressUpdate || existingItem.createdAt || now,
     };
 
     await saveMedia(updatedMovie);
