@@ -8,14 +8,7 @@ import {
   getTMDBSeasonEpisodes,
   TMDBTvDetails,
 } from '../services/tmdb'
-import {
-  decideReleaseAction,
-  decideStallAction,
-  isNotifiableShow,
-  isNotifiableForStall,
-  buildShowMetaUpdates,
-  ReleaseNotice,
-} from './release-check'
+import { decideReleaseAction, isNotifiableShow, buildShowMetaUpdates, ReleaseNotice } from './release-check'
 import { Show, TrackedMedia } from '../types'
 import {
   TMDBAiredEpisode,
@@ -25,16 +18,12 @@ import {
 } from '../services/aired-episode'
 
 export const RELEASE_NOTIFICATION_PREFIX = 'nyatching_rel_'
-export const STALL_NOTIFICATION_PREFIX = 'nyatching_stall_'
 
 export const buildReleaseNotificationId = (showId: string): string =>
   `${RELEASE_NOTIFICATION_PREFIX}${encodeURIComponent(showId)}_${Date.now()}`
 
-export const buildStallNotificationId = (showId: string): string =>
-  `${STALL_NOTIFICATION_PREFIX}${encodeURIComponent(showId)}_${Date.now()}`
-
 export const parseReleaseNotificationShowId = (notificationId: string): string | null => {
-  const prefixes = [RELEASE_NOTIFICATION_PREFIX, STALL_NOTIFICATION_PREFIX, 'nyatching_rel:']
+  const prefixes = [RELEASE_NOTIFICATION_PREFIX, 'nyatching_stall_', 'nyatching_rel:']
   const prefix = prefixes.find((p) => notificationId.startsWith(p))
   if (!prefix) return null
   const rest = notificationId.slice(prefix.length)
@@ -130,18 +119,6 @@ const processShowRelease = async (show: Show): Promise<void> => {
     }
   } catch (err) {
     console.error(`[Nyatching] Error processing show "${show.title}":`, err)
-  }
-}
-
-export const checkStallReminders = async (): Promise<void> => {
-  const stallReminderDays = (await getSettings()).stallReminderDays ?? 7
-  if (stallReminderDays <= 0) return
-
-  for (const item of (await getAllMedia()).filter(isNotifiableForStall)) {
-    const decision = decideStallAction(item, stallReminderDays)
-    if (!decision.notify || !decision.notice) continue
-    await sendNotice(item, decision.notice, buildStallNotificationId(item.id))
-    await updateMedia({ id: item.id, lastStallNotified: decision.lastStallNotified })
   }
 }
 

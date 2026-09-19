@@ -1,11 +1,10 @@
 import { TMDBAiredEpisode, compareAiredEpisodes } from '../services/aired-episode'
-import { Show, TrackedMedia, isShow, isMovie, isNotifyEnabled } from '../types'
+import { Show, TrackedMedia, isShow, isNotifyEnabled } from '../types'
 
-export const MS_PER_DAY = 24 * 60 * 60 * 1000
 export const CHECK_AT_HOUR = 12
 export const CHECK_AT_MINUTE = 0
 
-export type ReleaseKind = 'new_season' | 'new_episode' | 'inactivity'
+export type ReleaseKind = 'new_season' | 'new_episode'
 
 export interface ReleaseNotice {
   kind: ReleaseKind
@@ -22,11 +21,11 @@ export interface ReleaseCheckResult {
   updates: Partial<Show>
 }
 
-export const isNotifiableForStall = (media: TrackedMedia): boolean =>
-  isNotifyEnabled(media) && (media.status === 'watching' || media.status === 'waiting')
-
 export const isNotifiableShow = (media: TrackedMedia): media is Show =>
-  isShow(media) && isNotifiableForStall(media) && Boolean(media.tmdbId)
+  isShow(media) &&
+  isNotifyEnabled(media) &&
+  (media.status === 'watching' || media.status === 'waiting') &&
+  Boolean(media.tmdbId)
 
 export const notifyAtOnDate = (now: number = Date.now()): number => {
   const date = new Date(now)
@@ -79,79 +78,6 @@ export const shouldCatchUpMissedCheck = (
   return now >= todaySlot && last < todaySlot && now - last >= periodMs
 }
 
-export const stallDueAt = (
-  media: TrackedMedia,
-  stallReminderDays: number
-): number | null => {
-  if (stallReminderDays <= 0 || !isNotifiableForStall(media)) return null
-  const lastActivity = lastMediaActivityAt(media)
-  const thresholdMs = stallReminderDays * MS_PER_DAY
-  if (media.lastStallNotified && media.lastStallNotified >= lastActivity) {
-    return media.lastStallNotified + thresholdMs
-  }
-  return lastActivity + thresholdMs
-}
-
-export const earliestStallDueAt = (
-  mediaList: TrackedMedia[],
-  stallReminderDays: number
-): number | null => {
-  let soonest: number | null = null
-  for (const item of mediaList) {
-    const due = stallDueAt(item, stallReminderDays)
-    if (due === null) continue
-    if (soonest === null || due < soonest) soonest = due
-  }
-  return soonest
-}
-
-export const lastMediaActivityAt = (media: TrackedMedia): number =>
-  media.lastProgressUpdate || media.createdAt || 0
-
-export const decideStallAction = (
-  media: TrackedMedia,
-  stallReminderDays: number,
-  now: number = Date.now()
-): { notify: boolean; notice: ReleaseNotice | null; lastStallNotified?: number } => {
-  if (stallReminderDays <= 0 || !isNotifiableForStall(media)) {
-    return { notify: false, notice: null }
-  }
-
-  const lastActivity = lastMediaActivityAt(media)
-  const idleMs = now - lastActivity
-  const thresholdMs = stallReminderDays * MS_PER_DAY
-  if (idleMs < thresholdMs) {
-    return { notify: false, notice: null }
-  }
-
-  if (media.lastStallNotified && now - media.lastStallNotified < thresholdMs) {
-    return { notify: false, notice: null }
-  }
-
-  const idleDays = Math.max(stallReminderDays, Math.floor(idleMs / MS_PER_DAY))
-  return {
-    notify: true,
-    notice: buildStallNotice(media, idleDays),
-    lastStallNotified: now,
-  }
-}
-
-export const buildStallNotice = (media: TrackedMedia, idleDays: number): ReleaseNotice => {
-  const daysLabel = idleDays === 1 ? '1 day' : `${idleDays} days`
-  const hint = watchHint(media)
-  const watchingUrl = media.watchingUrl?.trim() || undefined
-  const what = isMovie(media) ? 'movie' : 'show'
-
-  return {
-    kind: 'inactivity',
-    title: media.title,
-    message: `You have not updated this ${what} in ${daysLabel}.${hint}`,
-    logTitle: media.title,
-    logMessage: `You have not updated this ${what} in ${daysLabel}.`,
-    watchingUrl,
-  }
-}
-
 export const buildShowMetaUpdates = (
   totalSeasons: number | undefined,
   totalEpisodes: number | undefined
@@ -183,29 +109,30 @@ export const nextEpisodeToWatch = (
 const hasAired = (latest: TMDBAiredEpisode, target: TMDBAiredEpisode): boolean =>
   compareAiredEpisodes(latest, target) >= 0
 
-const watchHint = (media: TrackedMedia): string =>
-  media.watchingUrl?.trim() ? ' Click to open your watching link.' : ''
+const watchHint = (show: Show): string =>
+  show.watchingUrl?.trim() ? ' Click to open your watching link.' : ''
 
 export const buildReleaseNotice = (show: Show, next: TMDBAiredEpisode): ReleaseNotice => {
   const isNewSeason = next.season > show.currentSeason
   const episodeLabel = formatEpisodeLabel(next)
   const hint = watchHint(show)
   const watchingUrl = show.watchingUrl?.trim() || undefined
+  const kind: ReleaseKind = isNewSeason ? 'new_season' : 'new_episode'
+  const nextWhat = isNewSeason ? 'season' : 'episode'
 
   if (show.status === 'watching') {
-    const nextWhat = isNewSeason ? 'season' : 'episode'
     return {
-      kind: isNewSeason ? 'new_season' : 'new_episode',
+      kind,
       title: show.title,
-      message: `Reminder to watch the next ${nextWhat} (${episodeLabel}).${hint}`,
+      message: `The next ${nextWhat} is out (${episodeLabel}).${hint}`,
       logTitle: show.title,
-      logMessage: `Reminder to watch the next ${nextWhat} (${episodeLabel}).`,
+      logMessage: `The next ${nextWhat} is out (${episodeLabel}).`,
       watchingUrl,
     }
   }
 
   return {
-    kind: isNewSeason ? 'new_season' : 'new_episode',
+    kind,
     title: show.title,
     message: `${episodeLabel} is out.${hint}`,
     logTitle: show.title,

@@ -4,17 +4,9 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
 }
 
 import browser from 'webextension-polyfill'
-import { getMediaById, getSettings, onMediaStorageChange } from '../storage'
-import { checkShowReleases, checkStallReminders, parseReleaseNotificationShowId } from './release-poll'
-import {
-  ALARM_NAME,
-  STALL_ALARM_NAME,
-  isMissedScheduledCheck,
-  isMissedStallCheck,
-  scheduleAllAlarms,
-  scheduleReleaseCheckAlarm,
-  scheduleStallAlarm,
-} from './alarm-schedule'
+import { getMediaById, getSettings } from '../storage'
+import { checkShowReleases, parseReleaseNotificationShowId } from './release-poll'
+import { ALARM_NAME, isMissedScheduledCheck, scheduleReleaseCheckAlarm } from './alarm-schedule'
 
 const setupAlarm = async (): Promise<void> => {
   try {
@@ -23,14 +15,10 @@ const setupAlarm = async (): Promise<void> => {
       console.log('[Nyatching Background] Missed episode check; running now.')
       await checkShowReleases()
     }
-    if (await isMissedStallCheck(settings)) {
-      console.log('[Nyatching Background] Missed inactivity reminder; running now.')
-      await checkStallReminders()
-    }
   } catch (error) {
     console.error('[Nyatching Background] Catch-up check failed:', error)
   } finally {
-    await scheduleAllAlarms()
+    await scheduleReleaseCheckAlarm()
   }
 }
 
@@ -71,26 +59,18 @@ browser.runtime.onInstalled.addListener(() => setupAlarm())
 browser.runtime.onStartup.addListener(() => setupAlarm())
 
 browser.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== ALARM_NAME) return
   try {
-    if (alarm.name === ALARM_NAME) {
-      await checkShowReleases()
-    } else if (alarm.name === STALL_ALARM_NAME) {
-      await checkStallReminders()
-    }
+    await checkShowReleases()
   } catch (error) {
     console.error('[Nyatching Background] Scheduled check failed:', error)
   } finally {
     try {
-      if (alarm.name === ALARM_NAME) await scheduleReleaseCheckAlarm()
-      else if (alarm.name === STALL_ALARM_NAME) await scheduleStallAlarm()
+      await scheduleReleaseCheckAlarm()
     } catch (error) {
       console.error('[Nyatching Background] Failed to reschedule:', error)
     }
   }
-})
-
-onMediaStorageChange(() => {
-  void scheduleStallAlarm()
 })
 
 const handleRuntimeMessage = async (message: unknown): Promise<{ status: string }> => {
