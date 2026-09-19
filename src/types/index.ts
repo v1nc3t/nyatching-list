@@ -2,7 +2,6 @@ export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
 
 export interface AppSettings {
   newSeasonCheckIntervalHours: number // -1 means Never
-  stallReminderDays: number // -1 means Never
   lastReleaseCheckAt?: number
 }
 
@@ -16,8 +15,6 @@ export interface BaseMedia {
   tmdbId?: number;
   createdAt: number;
   updatedAt: number;
-  lastProgressUpdate: number      // Updated whenever episode or minutes change
-  lastStallNotified?: number
   /** When false, this item never sends notifications. Missing means on. */
   notify?: boolean
 }

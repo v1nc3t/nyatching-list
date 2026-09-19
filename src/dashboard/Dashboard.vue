@@ -644,6 +644,7 @@ const stopTitleMarquee = (event: Event) => {
                   Edit Link
                 </button>
                 <button
+                  v-if="isShow(item)"
                   type="button"
                   class="link-badge notify-badge"
                   :class="{ 'is-on': isNotifyEnabled(item) && !notifyLocked(item), 'is-off': !isNotifyEnabled(item) || notifyLocked(item) }"
@@ -652,13 +653,9 @@ const stopTitleMarquee = (event: Event) => {
                   :title="
                     notifyLocked(item)
                       ? 'Notifications are off for completed and dropped titles'
-                      : isMovie(item)
-                        ? isNotifyEnabled(item)
-                          ? 'Inactivity notifications on'
-                          : 'Inactivity notifications off'
-                        : isNotifyEnabled(item)
-                          ? 'Notifications on'
-                          : 'Notifications off'
+                      : isNotifyEnabled(item)
+                        ? 'New episode and season notifications on'
+                        : 'New episode and season notifications off'
                   "
                   @click="handleNotifyToggle(item)"
                 >
@@ -763,7 +760,7 @@ const stopTitleMarquee = (event: Event) => {
                       st === 'waiting'
                         ? 'Waiting: notify when a new episode or season is out'
                         : st === 'watching'
-                          ? 'Watching: remind you when the next episode or season airs'
+                          ? 'Watching: notify when the next episode or season airs'
                           : undefined
                     "
                     @click="handleStatusChange(item, st)"

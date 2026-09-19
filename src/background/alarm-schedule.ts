@@ -1,14 +1,9 @@
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
-import { getAllMedia, getSettings } from '../storage'
-import {
-  computeNextAlarmWhen,
-  earliestStallDueAt,
-  shouldCatchUpMissedCheck,
-} from './release-check'
+import { getSettings } from '../storage'
+import { computeNextAlarmWhen, shouldCatchUpMissedCheck } from './release-check'
 
 export const ALARM_NAME = 'nyatching_daily_check'
-export const STALL_ALARM_NAME = 'nyatching_stall_check'
 
 export const nextCheckTimestamp = (settings: AppSettings, now: number = Date.now()): number | null => {
   return computeNextAlarmWhen(
@@ -32,52 +27,26 @@ export const formatNextCheckLabel = (when: number | null, now: number = Date.now
   return `Next episode check ${whenDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at ${time}.`
 }
 
-const delayMinutesUntil = (when: number): number => {
-  const minutes = (when - Date.now()) / 60000
-  return Math.max(1, Math.ceil(minutes))
-}
-
-const setAlarm = async (name: string, when: number | null): Promise<void> => {
-  await browser.alarms.clear(name)
-  if (when === null) return
-  const delayInMinutes = delayMinutesUntil(when)
-  await browser.alarms.create(name, { delayInMinutes })
-  console.log(
-    `[Nyatching Background] ${name} at ${new Date(when).toLocaleString()} (in ${delayInMinutes} min).`
-  )
-}
-
 export const scheduleReleaseCheckAlarm = async (
   settings?: AppSettings
 ): Promise<{ when: number | null }> => {
+  // Drop leftover inactivity alarms from older versions.
+  await browser.alarms.clear('nyatching_stall_check')
+
   const resolved = settings ?? (await getSettings())
   const when = nextCheckTimestamp(resolved)
-  if (!when) console.log('[Nyatching Background] Episode checks disabled (Never).')
-  await setAlarm(ALARM_NAME, when)
-  return { when }
-}
-
-export const scheduleStallAlarm = async (settings?: AppSettings): Promise<{ when: number | null }> => {
-  const resolved = settings ?? (await getSettings())
-  const stallDays = resolved.stallReminderDays ?? 7
-  if (stallDays <= 0) {
-    await browser.alarms.clear(STALL_ALARM_NAME)
-    console.log('[Nyatching Background] Inactivity reminders disabled (Never).')
+  await browser.alarms.clear(ALARM_NAME)
+  if (!when) {
+    console.log('[Nyatching Background] Episode checks disabled (Never).')
     return { when: null }
   }
-  const when = earliestStallDueAt(await getAllMedia(), stallDays)
-  if (when === null) {
-    await browser.alarms.clear(STALL_ALARM_NAME)
-    return { when: null }
-  }
-  await setAlarm(STALL_ALARM_NAME, when)
-  return { when }
-}
 
-export const scheduleAllAlarms = async (settings?: AppSettings): Promise<void> => {
-  const resolved = settings ?? (await getSettings())
-  await scheduleReleaseCheckAlarm(resolved)
-  await scheduleStallAlarm(resolved)
+  const delayInMinutes = Math.max(1, Math.ceil((when - Date.now()) / 60000))
+  await browser.alarms.create(ALARM_NAME, { delayInMinutes })
+  console.log(
+    `[Nyatching Background] ${ALARM_NAME} at ${new Date(when).toLocaleString()} (in ${delayInMinutes} min).`
+  )
+  return { when }
 }
 
 export const isMissedScheduledCheck = (settings: AppSettings, now: number = Date.now()): boolean => {
@@ -86,14 +55,4 @@ export const isMissedScheduledCheck = (settings: AppSettings, now: number = Date
     settings.lastReleaseCheckAt,
     now
   )
-}
-
-export const isMissedStallCheck = async (
-  settings: AppSettings,
-  now: number = Date.now()
-): Promise<boolean> => {
-  const stallDays = settings.stallReminderDays ?? 7
-  if (stallDays <= 0) return false
-  const when = earliestStallDueAt(await getAllMedia(), stallDays)
-  return when !== null && when <= now
 }

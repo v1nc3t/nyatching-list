@@ -3,25 +3,22 @@ import { ref, onMounted, computed, onUnmounted } from 'vue'
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings, saveSettings } from '../storage'
-import { formatNextCheckLabel, nextCheckTimestamp, scheduleAllAlarms } from '../background/alarm-schedule'
+import { formatNextCheckLabel, nextCheckTimestamp, scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
 const isSaving = ref(false)
-
-const isOpenSeason = ref(false)
-const isOpenStall = ref(false)
+const isOpenInterval = ref(false)
 
 const settings = ref<AppSettings>({
   newSeasonCheckIntervalHours: 24,
-  stallReminderDays: 7,
 })
 
 const nextCheckHint = computed(() => formatNextCheckLabel(nextCheckTimestamp(settings.value)))
 
-const seasonOptions = [
+const intervalOptions = [
   { label: 'Never', value: -1 },
   { label: '1 Day', value: 24 },
   { label: '2 Days', value: 48 },
@@ -33,37 +30,13 @@ const seasonOptions = [
   { label: '1 Year', value: 8760 },
 ]
 
-const stallOptions = [
-  { label: 'Never', value: -1 },
-  { label: '1 Day', value: 1 },
-  { label: '2 Days', value: 2 },
-  { label: '1 Week', value: 7 },
-  { label: '2 Weeks', value: 14 },
-  { label: '1 Month', value: 30 },
-  { label: '2 Months', value: 60 },
-  { label: '6 Months', value: 180 },
-  { label: '1 Year', value: 365 },
-]
-
-const selectedSeasonLabel = computed(() => {
-  const match = seasonOptions.find((opt) => opt.value === settings.value.newSeasonCheckIntervalHours)
+const selectedIntervalLabel = computed(() => {
+  const match = intervalOptions.find((opt) => opt.value === settings.value.newSeasonCheckIntervalHours)
   return match ? match.label : 'Select interval'
 })
 
-const selectedStallLabel = computed(() => {
-  const match = stallOptions.find((opt) => opt.value === settings.value.stallReminderDays)
-  return match ? match.label : 'Select threshold'
-})
-
-const closeAllSelects = () => {
-  isOpenSeason.value = false
-  isOpenStall.value = false
-}
-
 const handleClickOutside = (event: MouseEvent) => {
-  const target = event.target as HTMLElement
-  if (!target.closest('.select-season')) isOpenSeason.value = false
-  if (!target.closest('.select-stall')) isOpenStall.value = false
+  if (!(event.target as HTMLElement).closest('.select-interval')) isOpenInterval.value = false
 }
 
 onMounted(async () => {
@@ -75,26 +48,9 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-const toggleSeasonDropdown = () => {
-  const next = !isOpenSeason.value
-  closeAllSelects()
-  isOpenSeason.value = next
-}
-
-const toggleStallDropdown = () => {
-  const next = !isOpenStall.value
-  closeAllSelects()
-  isOpenStall.value = next
-}
-
-const selectSeasonOption = (val: number) => {
+const selectInterval = (val: number) => {
   settings.value.newSeasonCheckIntervalHours = val
-  isOpenSeason.value = false
-}
-
-const selectStallOption = (val: number) => {
-  settings.value.stallReminderDays = val
-  isOpenStall.value = false
+  isOpenInterval.value = false
 }
 
 const handleSave = async () => {
@@ -109,7 +65,7 @@ const handleSave = async () => {
       })
     } catch (error) {
       console.error('[Nyatching List] Background did not acknowledge settings:', error)
-      await scheduleAllAlarms(saved)
+      await scheduleReleaseCheckAlarm(saved)
     }
 
     emit('close')
@@ -136,47 +92,20 @@ const handleSave = async () => {
             How often to look up watching and waiting shows on TMDB for new episodes or seasons.
             Checks run at 12:00 PM. {{ nextCheckHint }} If the browser is closed, the check runs when it next opens.
           </p>
-          <div class="select select-season" :class="{ 'is-open': isOpenSeason }">
-            <div class="selected" @click="toggleSeasonDropdown">
-              <span>{{ selectedSeasonLabel }}</span>
+          <div class="select select-interval" :class="{ 'is-open': isOpenInterval }">
+            <div class="selected" @click.stop="isOpenInterval = !isOpenInterval">
+              <span>{{ selectedIntervalLabel }}</span>
               <svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 512 512" class="arrow">
                 <path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"></path>
               </svg>
             </div>
-            <div v-show="isOpenSeason" class="options">
+            <div v-show="isOpenInterval" class="options">
               <label
-                v-for="opt in seasonOptions"
+                v-for="opt in intervalOptions"
                 :key="opt.value"
                 class="option-item"
                 :class="{ active: settings.newSeasonCheckIntervalHours === opt.value }"
-                @click="selectSeasonOption(opt.value)"
-              >
-                {{ opt.label }}
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>Inactivity Reminder Frequency</label>
-          <p class="form-hint">
-            Sent X time after your last episode or minutes update, not at the episode check.
-            Movies only use this reminder.
-          </p>
-          <div class="select select-stall" :class="{ 'is-open': isOpenStall }">
-            <div class="selected" @click="toggleStallDropdown">
-              <span>{{ selectedStallLabel }}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 512 512" class="arrow">
-                <path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"></path>
-              </svg>
-            </div>
-            <div v-show="isOpenStall" class="options">
-              <label
-                v-for="opt in stallOptions"
-                :key="opt.value"
-                class="option-item"
-                :class="{ active: settings.stallReminderDays === opt.value }"
-                @click="selectStallOption(opt.value)"
+                @click="selectInterval(opt.value)"
               >
                 {{ opt.label }}
               </label>
