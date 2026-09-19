@@ -665,7 +665,7 @@ const handleAddMediaSubmit = async () => {
                   st === 'waiting'
                     ? 'Waiting: notify when a new episode or season is out'
                     : st === 'watching'
-                      ? 'Watching: remind you when the next episode or season airs'
+                      ? 'Watching: notify when the next episode or season airs'
                       : undefined
                 "
                 @click="setStatus(st)"
