@@ -156,6 +156,12 @@ export const decideReleaseAction = (
     return { notify: false, notice: null, updates: metaUpdates }
   }
 
+  const alreadyTold =
+    show.lastNotifiedSeason === next.season && show.lastNotifiedEpisode === next.episode
+  if (alreadyTold) {
+    return { notify: false, notice: null, updates: metaUpdates }
+  }
+
   return {
     notify: true,
     notice: buildReleaseNotice(show, next),
