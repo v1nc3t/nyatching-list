@@ -31,7 +31,7 @@ Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 - **Search:** Find titles with autocomplete powered by [TMDB](https://www.themoviedb.org/)
 - **IMDb quick add:** Open the extension on an IMDb title page to pre-fill the form
 - **Dashboard:** Browse, filter, and manage your full list in a dedicated tab
-- **Notifications:** Desktop reminders for new episodes or seasons, and when you have not updated a title in a while
+- **Notifications:** Desktop alerts when a new episode or season is out
 - **Dark / light theme:** Switch themes from the popup or dashboard
 - **Local storage:** Your list stays on your device
 
@@ -52,7 +52,7 @@ If you are already on an IMDb title page, the form can fill itself in for you.
 
 - **Shows:** Update the current season and episode from the dashboard
 - **Movies:** Update how many minutes you have watched
-- **Notify:** Turn reminders on or off per title on the dashboard card
+- **Notify:** Turn new episode and season alerts on or off per show
 
 ### Dashboard
 
@@ -65,20 +65,11 @@ Open the dashboard from the popup to:
 
 ### Notifications
 
-Watching and waiting titles with **Notify** on can send desktop reminders. Click a toast to open your watching link, or the dashboard if none is set.
-
-- **Shows:** New episodes or seasons from TMDB, plus inactivity reminders
-- **Movies:** Inactivity reminders only
+Watching and waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. Click a toast to open your watching link, or the dashboard if none is set. Movies do not send notifications. Completed and dropped titles are not notified.
 
 TMDB checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
 
-Inactivity reminders fire when the chosen time has passed since you last changed a show’s episode or a movie’s minutes watched, not at the episode check. Completed and dropped titles are not reminded.
-
-In settings you can control:
-
-- How often to look up shows on TMDB
-- How long without a progress update before an inactivity reminder
-- Turning either reminder off entirely (`Never`)
+In settings you can set how often to look up shows on TMDB, or turn checks off (`Never`).
 
 ---
 
@@ -96,8 +87,8 @@ In settings you can control:
 | Permission | Why it is needed |
 | --- | --- |
 | `storage` | Save your watchlist and settings |
-| `alarms` | Run periodic season and inactivity checks |
-| `notifications` | Show desktop reminders |
+| `alarms` | Run periodic episode and season checks |
+| `notifications` | Show desktop alerts for new episodes or seasons |
 | `api.themoviedb.org` | Search titles and check for new seasons |
 | `imdb.com` | Detect the current IMDb title page for quick add |
 
