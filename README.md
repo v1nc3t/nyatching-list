@@ -65,7 +65,7 @@ Open the dashboard from the popup to:
 
 ### Notifications
 
-Watching and waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. Click a toast to open your watching link, or the dashboard if none is set. Movies do not send notifications. Completed and dropped titles are not notified.
+Waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. Click a toast to open your watching link, or the dashboard if none is set. Watching, completed, and dropped titles are not notified. Movies do not send notifications.
 
 TMDB checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
 

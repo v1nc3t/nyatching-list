@@ -223,8 +223,7 @@ const handleNotifyToggle = async (item: TrackedMedia) => {
   await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
 }
 
-const notifyLocked = (item: TrackedMedia) =>
-  item.status === 'completed' || item.status === 'dropped'
+const notifyLocked = (item: TrackedMedia) => item.status !== 'waiting'
 
 // Handlers for Movie
 const handleMinutesChange = async (movie: Movie, delta: number) => {
@@ -652,7 +651,7 @@ const stopTitleMarquee = (event: Event) => {
                   :aria-pressed="isNotifyEnabled(item) && !notifyLocked(item)"
                   :title="
                     notifyLocked(item)
-                      ? 'Notifications are off for completed and dropped titles'
+                      ? 'Notifications are only sent for waiting shows'
                       : isNotifyEnabled(item)
                         ? 'New episode and season notifications on'
                         : 'New episode and season notifications off'

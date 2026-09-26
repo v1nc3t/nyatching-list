@@ -89,7 +89,7 @@ const handleSave = async () => {
         <div class="form-group">
           <label>New Episode Check Frequency</label>
           <p class="form-hint">
-            How often to look up watching and waiting shows on TMDB for new episodes or seasons.
+            How often to look up waiting shows on TMDB for new episodes or seasons.
             Checks run at 12:00 PM. {{ nextCheckHint }} If the browser is closed, the check runs when it next opens.
           </p>
           <div class="select select-interval" :class="{ 'is-open': isOpenInterval }">

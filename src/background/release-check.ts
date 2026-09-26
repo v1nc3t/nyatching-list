@@ -24,7 +24,7 @@ export interface ReleaseCheckResult {
 export const isNotifiableShow = (media: TrackedMedia): media is Show =>
   isShow(media) &&
   isNotifyEnabled(media) &&
-  (media.status === 'watching' || media.status === 'waiting') &&
+  media.status === 'waiting' &&
   Boolean(media.tmdbId)
 
 export const notifyAtOnDate = (now: number = Date.now()): number => {
@@ -118,18 +118,6 @@ export const buildReleaseNotice = (show: Show, next: TMDBAiredEpisode): ReleaseN
   const hint = watchHint(show)
   const watchingUrl = show.watchingUrl?.trim() || undefined
   const kind: ReleaseKind = isNewSeason ? 'new_season' : 'new_episode'
-  const nextWhat = isNewSeason ? 'season' : 'episode'
-
-  if (show.status === 'watching') {
-    return {
-      kind,
-      title: show.title,
-      message: `The next ${nextWhat} is out (${episodeLabel}).${hint}`,
-      logTitle: show.title,
-      logMessage: `The next ${nextWhat} is out (${episodeLabel}).`,
-      watchingUrl,
-    }
-  }
 
   return {
     kind,
