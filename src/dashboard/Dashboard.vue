@@ -223,7 +223,15 @@ const handleNotifyToggle = async (item: TrackedMedia) => {
   await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
 }
 
-const notifyLocked = (item: TrackedMedia) => item.status !== 'waiting'
+const notifyLocked = (item: TrackedMedia) =>
+  item.status !== 'watching' && !(isShow(item) && item.status === 'waiting')
+
+const notifyTitle = (item: TrackedMedia): string => {
+  if (notifyLocked(item)) return 'Notifications are off for completed and dropped titles'
+  const on = isNotifyEnabled(item)
+  if (item.status === 'watching') return on ? 'Reminders on' : 'Reminders off'
+  return on ? 'New episode notifications on' : 'New episode notifications off'
+}
 
 // Handlers for Movie
 const handleMinutesChange = async (movie: Movie, delta: number) => {
@@ -360,7 +368,7 @@ const stopTitleMarquee = (event: Event) => {
             class="icon-btn notif-btn"
             @click="openNotificationLog"
             aria-label="Notifications"
-            title="Notifications Log"
+            title="Notifications"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -376,8 +384,8 @@ const stopTitleMarquee = (event: Event) => {
             type="button"
             class="icon-btn"
             @click="isSettingsOpen = true"
-            aria-label="Notification Settings"
-            title="Notification Settings"
+            aria-label="Settings"
+            title="Settings"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3" />
@@ -428,14 +436,14 @@ const stopTitleMarquee = (event: Event) => {
     <aside v-if="isNotificationsOpen" class="notif-drawer-overlay" @click.self="isNotificationsOpen = false">
       <div class="notif-drawer">
         <div class="drawer-header">
-          <h3>Notifications Log</h3>
+          <h3>Notifications</h3>
           <div class="drawer-actions">
             <button
               v-if="notificationLogs.length > 0"
               class="clear-all-btn"
               @click="handleClearAllNotifications"
             >
-              Clear Log
+              Clear
             </button>
             <button class="delete-btn" title="Delete" @click="isNotificationsOpen = false">
               <svg viewBox="0 0 24 24" width="18" height="18">
@@ -451,7 +459,7 @@ const stopTitleMarquee = (event: Event) => {
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
-            <p>No recent release notifications</p>
+            <p>No notifications</p>
           </div>
 
           <div v-else class="notif-list">
@@ -643,19 +651,13 @@ const stopTitleMarquee = (event: Event) => {
                   Edit Link
                 </button>
                 <button
-                  v-if="isShow(item)"
+                  v-if="isShow(item) || item.status === 'watching'"
                   type="button"
                   class="link-badge notify-badge"
                   :class="{ 'is-on': isNotifyEnabled(item) && !notifyLocked(item), 'is-off': !isNotifyEnabled(item) || notifyLocked(item) }"
                   :disabled="notifyLocked(item)"
                   :aria-pressed="isNotifyEnabled(item) && !notifyLocked(item)"
-                  :title="
-                    notifyLocked(item)
-                      ? 'Notifications are only sent for waiting shows'
-                      : isNotifyEnabled(item)
-                        ? 'New episode and season notifications on'
-                        : 'New episode and season notifications off'
-                  "
+                  :title="notifyTitle(item)"
                   @click="handleNotifyToggle(item)"
                 >
                   Notify
