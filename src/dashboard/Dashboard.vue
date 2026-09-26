@@ -46,6 +46,13 @@ const linkEditItem = ref<TrackedMedia | null>(null)
 const mediaList = ref<TrackedMedia[]>([])
 const search = ref('')
 const statusFilter = ref<MediaStatus | 'all'>('all')
+const viewMode = ref<'tile' | 'list'>('tile')
+const STATUS_RANK: Record<MediaStatus, number> = {
+  watching: 0,
+  waiting: 1,
+  completed: 2,
+  dropped: 3,
+}
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
 const supportLink = ref('https://buymeacoffee.com/v1c3nt')
@@ -168,12 +175,14 @@ const stats = computed(() => {
 
 // Filtering & Sorting
 const filteredMedia = computed(() => {
-  return mediaList.value.filter((item) => {
-    const matchesSearch = item.title.toLowerCase().includes(search.value.toLowerCase().trim())
-    const matchesStatus = statusFilter.value === 'all' || item.status === statusFilter.value
-    const matchesType = typeFilter.value === 'all' || item.mediaType === typeFilter.value
-    return matchesSearch && matchesStatus && matchesType
-  })
+  return mediaList.value
+    .filter((item) => {
+      const matchesSearch = item.title.toLowerCase().includes(search.value.toLowerCase().trim())
+      const matchesStatus = statusFilter.value === 'all' || item.status === statusFilter.value
+      const matchesType = typeFilter.value === 'all' || item.mediaType === typeFilter.value
+      return matchesSearch && matchesStatus && matchesType
+    })
+    .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status])
 })
 
 // Handlers for Show
@@ -541,6 +550,11 @@ const stopTitleMarquee = (event: Event) => {
             <button class="segment-btn" :class="{ active: typeFilter === 'movie' }" @click="typeFilter = 'movie'">Movies</button>
           </div>
 
+          <div class="segmented" role="group" aria-label="Layout">
+            <button type="button" class="segment-btn" :class="{ active: viewMode === 'tile' }" @click="viewMode = 'tile'">Tiles</button>
+            <button type="button" class="segment-btn" :class="{ active: viewMode === 'list' }" @click="viewMode = 'list'">List</button>
+          </div>
+
           <!-- Custom Toolbar Status Dropdown -->
           <div class="select toolbar-select" :class="{ 'is-open': openSelectKey === 'filter' }">
             <div class="selected" @click.stop="toggleSelect('filter')">
@@ -578,10 +592,9 @@ const stopTitleMarquee = (event: Event) => {
         <p v-else>Use the popup extension menu to add your first show or movie!</p>
       </div>
 
-      <div v-else class="media-grid">
+      <div v-else class="media-grid" :class="{ 'is-list': viewMode === 'list' }">
         <article v-for="item in filteredMedia" :key="item.id" class="media-card" :class="{ 'is-select-open': openSelectKey === item.id }">
           <div class="card-top">
-            <span class="type-badge" :class="item.mediaType">{{ item.mediaType }}</span>
             <button class="delete-btn" title="Delete" @click="handleDelete(item.id)">
               <svg viewBox="0 0 24 24" width="18" height="18">
                 <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 18L18 6M6 6l12 12" />
@@ -644,6 +657,7 @@ const stopTitleMarquee = (event: Event) => {
                 </span>
               </h3>
               <div class="title-actions">
+                <span class="type-badge" :class="item.mediaType">{{ item.mediaType }}</span>
                 <button
                   type="button"
                   class="link-badge"
@@ -876,7 +890,7 @@ html, body {
   top: -2px;
   right: -2px;
   background: var(--danger);
-  color: #ffffff;
+  color: var(--accent-contrast);
   font-size: 0.65rem;
   font-weight: 800;
   padding: 0.1rem 0.35rem;
@@ -1071,7 +1085,7 @@ html, body {
 }
 
 .content {
-  max-width: 1375px;
+  max-width: 1000px;
   width: 100%;
   box-sizing: border-box;
   margin: 0 auto;
@@ -1237,6 +1251,145 @@ html, body {
   z-index: 10;
 }
 
+.media-grid.is-list {
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  container: media-list / inline-size;
+}
+
+.media-grid.is-list .media-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto 8rem auto;
+  grid-template-areas: "poster title progress status delete";
+  align-items: center;
+  column-gap: 0.85rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.media-grid.is-list .media-card:hover {
+  transform: none;
+}
+
+.media-grid.is-list .card-top,
+.media-grid.is-list .card-header-main,
+.media-grid.is-list .card-bottom {
+  display: contents;
+}
+
+.media-grid.is-list .poster-container {
+  grid-area: poster;
+  width: 42px;
+  height: 60px;
+}
+
+.media-grid.is-list .card-title-block {
+  grid-area: title;
+  height: auto;
+  justify-content: center;
+  gap: 0.28rem;
+}
+
+.media-grid.is-list .card-title {
+  padding-top: 0;
+  font-size: 0.98rem;
+}
+
+.media-grid.is-list .card-title-block .title-actions {
+  margin-top: 0;
+}
+
+.media-grid.is-list .progress-container {
+  grid-area: progress;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1.15rem;
+  min-width: 0;
+}
+
+.media-grid.is-list .progress-box {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  background: transparent;
+  padding: 0;
+  gap: 0.45rem;
+}
+
+.media-grid.is-list .progress-info {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.media-grid.is-list .btn-group {
+  flex-shrink: 0;
+}
+
+.media-grid.is-list .status-row-box {
+  grid-area: status;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.media-grid.is-list .status-label {
+  display: none;
+}
+
+.media-grid.is-list .status-row-box .select,
+.media-grid.is-list .status-row-box .selected {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.media-grid.is-list .status-row-box .selected {
+  justify-content: space-between;
+}
+
+.media-grid.is-list .title-actions .type-badge {
+  padding: 0.12rem 0.4rem;
+  font-weight: 700;
+}
+
+.media-grid:not(.is-list) .card-top {
+  justify-content: flex-end;
+}
+
+.media-grid:not(.is-list) .type-badge {
+  position: absolute;
+  top: 1.1rem;
+  left: 1.1rem;
+}
+
+.media-grid.is-list .delete-btn {
+  grid-area: delete;
+}
+
+@container media-list (max-width: 860px) {
+  .media-grid.is-list .media-card {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "poster title delete"
+      "progress progress progress"
+      "status status status";
+    row-gap: 0.45rem;
+  }
+
+  .media-grid.is-list .status-row-box {
+    justify-self: start;
+    width: 8rem;
+  }
+}
+
+@container media-list (max-width: 520px) {
+  .media-grid.is-list .progress-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .card-top {
   display: flex;
   justify-content: space-between;
@@ -1288,7 +1441,7 @@ html, body {
   align-items: center;
 }
 
-.delete-btn:hover { color: #ff5252; }
+.delete-btn:hover { color: var(--text-primary); }
 
 /* Poster Container & Card Header */
 .card-header-main {
@@ -1777,6 +1930,7 @@ html, body {
   .media-grid {
     grid-template-columns: 1fr;
   }
+
 
   .notif-drawer {
     width: 100%;
