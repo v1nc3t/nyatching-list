@@ -71,7 +71,7 @@ const handleSave = async () => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(2px);
+  backdrop-filter: none;
   display: flex;
   align-items: center;
   justify-content: center;

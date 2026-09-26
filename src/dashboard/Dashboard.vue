@@ -109,11 +109,15 @@ onMounted(() => {
   })
 
   // Storage listener for background notifications update
-  browser.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.nyatching_notification_log) {
-      notificationLogs.value = (changes.nyatching_notification_log.newValue as NotificationItem[]) || []
-    }
-  })
+  try {
+    browser.storage?.onChanged?.addListener((changes, area) => {
+      if (area === 'local' && changes.nyatching_notification_log) {
+        notificationLogs.value = (changes.nyatching_notification_log.newValue as NotificationItem[]) || []
+      }
+    })
+  } catch {
+    // Storage events are unavailable outside the extension.
+  }
 
   document.addEventListener('click', closeSelects)
 })
@@ -156,11 +160,10 @@ const handlePosterError = (id: string) => {
 const stats = computed(() => {
   const total = mediaList.value.length
   const watching = mediaList.value.filter((i) => i.status === 'watching').length
+  const waiting = mediaList.value.filter((i) => i.status === 'waiting').length
   const completed = mediaList.value.filter((i) => i.status === 'completed').length
-  const shows = mediaList.value.filter(isShow)
-  const movies = mediaList.value.filter(isMovie).length
 
-  return { total, watching, completed, shows: shows.length, movies }
+  return { total, watching, waiting, completed }
 })
 
 // Filtering & Sorting
@@ -355,9 +358,8 @@ const stopTitleMarquee = (event: Event) => {
     <!-- Navigation Bar -->
     <header class="navbar">
       <div class="brand">
-        <div>
-          <h1>NYATCHING LIST</h1>
-        </div>
+        <img class="brand-logo" src="/img/logo-48.png" alt="" width="32" height="32" />
+        <h1>NYATCHING LIST</h1>
       </div>
 
       <div class="header-right">
@@ -518,8 +520,8 @@ const stopTitleMarquee = (event: Event) => {
           <span class="stat-value">{{ stats.completed }}</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">Shows / Movies</span>
-          <span class="stat-value">{{ stats.shows }} / {{ stats.movies }}</span>
+          <span class="stat-label">Currently Waiting</span>
+          <span class="stat-value">{{ stats.waiting }}</span>
         </div>
       </section>
 
@@ -781,7 +783,7 @@ const stopTitleMarquee = (event: Event) => {
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         created by v1nc3t
       </a>
-      <span class="footer-divider" aria-hidden="true">•</span>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         support v1nc3t
       </a>
@@ -790,48 +792,12 @@ const stopTitleMarquee = (event: Event) => {
 </template>
 
 <style>
-:root.theme-dark {
-  --bg: #09090b;
-  --bg-card: #121215;
-  --bg-input: #18181c;
-  --border: #27272a;
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --accent: #10b981;
-  --accent-hover: #059669;
-  --accent-contrast: #000000;
-  --shadow: rgba(0, 0, 0, 0.65);
-
-  /* Badge Text Colors for Dark Mode */
-  --show-text: #005f88;
-  --movie-text: #762850;
-}
-
-:root.theme-light {
-  --bg: #f8f9fa;
-  --bg-card: #ffffff;
-  --bg-input: #f1f3f5;
-  --border: #e9ecef;
-  --text-primary: #212529;
-  --text-secondary: #6c757d;
-  --text-muted: #adb5bd;
-  --accent: #2f9d6f;
-  --accent-hover: #26855d;
-  --accent-contrast: #ffffff;
-  --shadow: rgba(0, 0, 0, 0.05);
-
-  /* Badge Text Colors for Light Mode */
-  --show-text: #004f77;
-  --movie-text: #8c1a4d;
-}
-
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Courier New', Courier, monospace;
   font-size: 16px;
 }
 </style>
@@ -849,7 +815,7 @@ html, body {
   align-items: center;
   padding: 1.15rem 2.5rem;
   background: var(--bg-card);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 3px double var(--border);
 }
 
 .header-right {
@@ -863,12 +829,25 @@ html, body {
   gap: 0.75rem;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
 .brand h1 {
   margin: 0;
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--accent);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.14em;
   line-height: 1.1;
 }
 
@@ -896,7 +875,7 @@ html, body {
   position: absolute;
   top: -2px;
   right: -2px;
-  background: #ef4444;
+  background: var(--danger);
   color: #ffffff;
   font-size: 0.65rem;
   font-weight: 800;
@@ -911,7 +890,7 @@ html, body {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
+  backdrop-filter: none;
   z-index: 1000;
   display: flex;
   justify-content: flex-end;
@@ -957,7 +936,7 @@ html, body {
 }
 
 .clear-all-btn:hover {
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .drawer-content {
@@ -1088,7 +1067,7 @@ html, body {
 }
 
 .dismiss-notif-btn:hover {
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .content {
@@ -1735,7 +1714,7 @@ html, body {
 
 .footer-link:hover {
   color: var(--accent);
-  text-decoration: line-through;
+  text-decoration: underline;
   text-decoration-color: var(--accent);
 }
 

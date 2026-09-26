@@ -1,0 +1,74 @@
+/* Dusty pastel green. Dark is a soft screen, light is washed paper. */
+:root,
+:root.theme-dark {
+  color-scheme: dark;
+  --bg: #101612;
+  --bg-card: #161e19;
+  --bg-input: #1e2822;
+  --border: #4e6356;
+  --text-primary: #c5d4c6;
+  --text-secondary: #8fa394;
+  --text-muted: #6d8074;
+  --accent: #7f9e84;
+  --accent-hover: #98b49c;
+  --accent-contrast: #101612;
+  --accent-soft: rgba(127, 158, 132, 0.24);
+  --danger: #c4928c;
+  --error-bg: #2a2220;
+  --error-text: #e4c4be;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --show-text: #9cb8a0;
+  --movie-text: #c4b49a;
+}
+
+:root.theme-light {
+  color-scheme: light;
+  --bg: #c5d2c4;
+  --bg-card: #d5e0d4;
+  --bg-input: #b7c8b6;
+  --border: #7e967f;
+  --text-primary: #243028;
+  --text-secondary: #3f5646;
+  --text-muted: #5e7566;
+  --accent: #4f6e56;
+  --accent-hover: #3e5844;
+  --accent-contrast: #eef3ee;
+  --accent-soft: rgba(79, 110, 86, 0.22);
+  --danger: #a87872;
+  --error-bg: #e4d0cc;
+  --error-text: #6a3832;
+  --shadow: rgba(30, 45, 32, 0.12);
+  --show-text: #345844;
+  --movie-text: #6a5644;
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: 'Courier New', Courier, monospace;
+}
+
+:root.theme-dark body {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.16) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* ponytail: components set radius and soft shadows in dozens of rules */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
