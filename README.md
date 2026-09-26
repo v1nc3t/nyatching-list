@@ -52,7 +52,7 @@ If you are already on an IMDb title page, the form can fill itself in for you.
 
 - **Shows:** Update the current season and episode from the dashboard
 - **Movies:** Update how many minutes you have watched
-- **Notify:** Turn new episode and season alerts on or off per show
+- **Notify:** Turn reminders and new-episode alerts on or off
 
 ### Dashboard
 
@@ -65,11 +65,11 @@ Open the dashboard from the popup to:
 
 ### Notifications
 
-Waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. Click a toast to open your watching link, or the dashboard if none is set. Watching, completed, and dropped titles are not notified. Movies do not send notifications.
+Waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. Watching shows and movies with **Notify** on can send a reminder after they go unchanged for the interval set in settings. At most 2 episode alerts and 2 reminders are sent per day. Click a toast to open your watching link, or the dashboard if none is set. Completed and dropped titles are not notified.
 
-TMDB checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
+Checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
 
-In settings you can set how often to look up shows on TMDB, or turn checks off (`Never`).
+In settings you can set how often to look up waiting shows on TMDB, how long before a watching reminder, or turn either off (`Never`).
 
 ---
 

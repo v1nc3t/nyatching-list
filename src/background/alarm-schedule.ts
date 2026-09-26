@@ -1,11 +1,14 @@
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings } from '../storage'
-import { computeNextAlarmWhen, shouldCatchUpMissedCheck } from './release-check'
+import { computeNextAlarmWhen, nextNotifyAt, notifyAtOnDate, shouldCatchUpMissedCheck } from './release-check'
 
 export const ALARM_NAME = 'nyatching_daily_check'
 
-export const nextCheckTimestamp = (settings: AppSettings, now: number = Date.now()): number | null => {
+export const nextReleaseCheckTimestamp = (
+  settings: AppSettings,
+  now: number = Date.now()
+): number | null => {
   return computeNextAlarmWhen(
     settings.newSeasonCheckIntervalHours ?? 24,
     settings.lastReleaseCheckAt,
@@ -13,18 +16,28 @@ export const nextCheckTimestamp = (settings: AppSettings, now: number = Date.now
   )
 }
 
-export const formatNextCheckLabel = (when: number | null, now: number = Date.now()): string => {
-  if (!when) return 'Episode checks are off (Never).'
-  const whenDate = new Date(when)
-  const time = whenDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const startOfWhen = new Date(when)
-  startOfWhen.setHours(0, 0, 0, 0)
-  const startOfNow = new Date(now)
-  startOfNow.setHours(0, 0, 0, 0)
-  const dayDiff = Math.round((startOfWhen.getTime() - startOfNow.getTime()) / 86400000)
-  if (dayDiff <= 0) return `Next episode check today at ${time}.`
-  if (dayDiff === 1) return `Next episode check tomorrow at ${time}.`
-  return `Next episode check ${whenDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} at ${time}.`
+export const nextReminderCheckTimestamp = (
+  settings: AppSettings,
+  now: number = Date.now()
+): number | null => {
+  if ((settings.reminderIntervalHours ?? -1) <= 0) return null
+  return nextNotifyAt(now)
+}
+
+export const nextCheckTimestamp = (settings: AppSettings, now: number = Date.now()): number | null => {
+  const times = [nextReleaseCheckTimestamp(settings, now), nextReminderCheckTimestamp(settings, now)].filter(
+    (when): when is number => when !== null
+  )
+  if (times.length === 0) return null
+  return Math.min(...times)
+}
+
+export const isReleaseCheckDue = (settings: AppSettings, now: number = Date.now()): boolean => {
+  const interval = settings.newSeasonCheckIntervalHours ?? 24
+  if (interval <= 0) return false
+  const last = settings.lastReleaseCheckAt ?? 0
+  if (last <= 0) return true
+  return now - last >= interval * 60 * 60 * 1000
 }
 
 export const scheduleReleaseCheckAlarm = async (
@@ -37,7 +50,7 @@ export const scheduleReleaseCheckAlarm = async (
   const when = nextCheckTimestamp(resolved)
   await browser.alarms.clear(ALARM_NAME)
   if (!when) {
-    console.log('[Nyatching Background] Episode checks disabled (Never).')
+    console.log('[Nyatching Background] Episode checks and reminders are off (Never).')
     return { when: null }
   }
 
@@ -55,4 +68,12 @@ export const isMissedScheduledCheck = (settings: AppSettings, now: number = Date
     settings.lastReleaseCheckAt,
     now
   )
+}
+
+export const isMissedReminderCheck = (settings: AppSettings, now: number = Date.now()): boolean => {
+  if ((settings.reminderIntervalHours ?? -1) <= 0) return false
+  const last = settings.lastReminderCheckAt ?? 0
+  if (last <= 0) return false
+  const todaySlot = notifyAtOnDate(now)
+  return now >= todaySlot && last < todaySlot
 }

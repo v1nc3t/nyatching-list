@@ -14,9 +14,21 @@ const STORAGE_KEY = 'nyatching_list_media' as const;
 const NOTIFICATIONS_STORAGE_KEY = 'nyatching_notification_log' as const;
 const SETTINGS_STORAGE_KEY = 'nyatching_settings' as const;
 const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'dropped'];
+const ACTIVITY_KEYS = ['status', 'currentSeason', 'currentEpisode', 'currentMinutes'] as const;
+
+function resolveActivityAt(
+  existing: TrackedMedia,
+  updates: Record<string, unknown>,
+  now: number
+): number {
+  if (ACTIVITY_KEYS.some((key) => updates[key] !== undefined)) return now;
+  if (typeof updates.lastActivityAt === 'number') return updates.lastActivityAt;
+  return existing.lastActivityAt ?? existing.updatedAt;
+}
 
 export const DEFAULT_SETTINGS: AppSettings = {
   newSeasonCheckIntervalHours: 24,
+  reminderIntervalHours: 168,
 };
 
 // ==========================================
@@ -62,7 +74,9 @@ export const saveSettings = async (settings: Partial<AppSettings>): Promise<AppS
   const updated: AppSettings = {
     newSeasonCheckIntervalHours:
       settings.newSeasonCheckIntervalHours ?? current.newSeasonCheckIntervalHours,
+    reminderIntervalHours: settings.reminderIntervalHours ?? current.reminderIntervalHours,
     lastReleaseCheckAt: settings.lastReleaseCheckAt ?? current.lastReleaseCheckAt,
+    lastReminderCheckAt: settings.lastReminderCheckAt ?? current.lastReminderCheckAt,
   };
   await setStorageData({ [SETTINGS_STORAGE_KEY]: updated });
   return updated;
@@ -163,6 +177,7 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     tmdbId: input.tmdbId,
     createdAt: now,
     updatedAt: now,
+    lastActivityAt: now,
   };
 
   let newItem: TrackedMedia;
@@ -232,6 +247,7 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
       currentSeason: season,
       currentEpisode: episode,
       updatedAt: now,
+      lastActivityAt: resolveActivityAt(existingItem, showUpdates, now),
     };
 
     await saveMedia(updatedShow);
@@ -251,6 +267,7 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
       ...movieUpdates,
       currentMinutes: minutes,
       updatedAt: now,
+      lastActivityAt: resolveActivityAt(existingItem, movieUpdates, now),
     };
 
     await saveMedia(updatedMovie);

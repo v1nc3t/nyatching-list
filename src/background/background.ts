@@ -5,21 +5,34 @@ if (typeof self !== 'undefined' && typeof (self as any).__LIVE_RELOAD__ === 'und
 
 import browser from 'webextension-polyfill'
 import { getMediaById, getSettings } from '../storage'
-import { checkShowReleases, parseReleaseNotificationShowId } from './release-poll'
-import { ALARM_NAME, isMissedScheduledCheck, scheduleReleaseCheckAlarm } from './alarm-schedule'
+import { checkReminders, checkShowReleases, parseReleaseNotificationShowId } from './release-poll'
+import {
+  ALARM_NAME,
+  isMissedReminderCheck,
+  isMissedScheduledCheck,
+  isReleaseCheckDue,
+  scheduleReleaseCheckAlarm,
+} from './alarm-schedule'
 
 const setupAlarm = async (): Promise<void> => {
+  const settings = await getSettings()
   try {
-    const settings = await getSettings()
     if (isMissedScheduledCheck(settings)) {
       console.log('[Nyatching Background] Missed episode check; running now.')
       await checkShowReleases()
     }
   } catch (error) {
-    console.error('[Nyatching Background] Catch-up check failed:', error)
-  } finally {
-    await scheduleReleaseCheckAlarm()
+    console.error('[Nyatching Background] Catch-up episode check failed:', error)
   }
+  try {
+    if (isMissedReminderCheck(settings)) {
+      console.log('[Nyatching Background] Missed reminder check; running now.')
+      await checkReminders()
+    }
+  } catch (error) {
+    console.error('[Nyatching Background] Catch-up reminder check failed:', error)
+  }
+  await scheduleReleaseCheckAlarm()
 }
 
 const openDashboard = async (): Promise<void> => {
@@ -61,9 +74,21 @@ browser.runtime.onStartup.addListener(() => setupAlarm())
 browser.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== ALARM_NAME) return
   try {
-    await checkShowReleases()
-  } catch (error) {
-    console.error('[Nyatching Background] Scheduled check failed:', error)
+    const settings = await getSettings()
+    if (isReleaseCheckDue(settings)) {
+      try {
+        await checkShowReleases()
+      } catch (error) {
+        console.error('[Nyatching Background] Scheduled episode check failed:', error)
+      }
+    }
+    if ((settings.reminderIntervalHours ?? -1) > 0) {
+      try {
+        await checkReminders()
+      } catch (error) {
+        console.error('[Nyatching Background] Scheduled reminder check failed:', error)
+      }
+    }
   } finally {
     try {
       await scheduleReleaseCheckAlarm()

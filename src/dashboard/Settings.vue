@@ -3,20 +3,19 @@ import { ref, onMounted, computed, onUnmounted } from 'vue'
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings, saveSettings } from '../storage'
-import { formatNextCheckLabel, nextCheckTimestamp, scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
+import { scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
 const isSaving = ref(false)
-const isOpenInterval = ref(false)
+const openMenu = ref<'episode' | 'reminder' | null>(null)
 
 const settings = ref<AppSettings>({
   newSeasonCheckIntervalHours: 24,
+  reminderIntervalHours: 168,
 })
-
-const nextCheckHint = computed(() => formatNextCheckLabel(nextCheckTimestamp(settings.value)))
 
 const intervalOptions = [
   { label: 'Never', value: -1 },
@@ -30,13 +29,26 @@ const intervalOptions = [
   { label: '1 Year', value: 8760 },
 ]
 
-const selectedIntervalLabel = computed(() => {
-  const match = intervalOptions.find((opt) => opt.value === settings.value.newSeasonCheckIntervalHours)
-  return match ? match.label : 'Select interval'
-})
+const intervalLabel = (value: number) =>
+  intervalOptions.find((opt) => opt.value === value)?.label ?? 'Select interval'
+
+const settingFields = computed(() => [
+  {
+    key: 'episode' as const,
+    label: 'New episodes',
+    hint: 'Waiting shows. Up to 2 a day.',
+    value: settings.value.newSeasonCheckIntervalHours,
+  },
+  {
+    key: 'reminder' as const,
+    label: 'Reminders',
+    hint: 'Watching titles. Up to 2 a day.',
+    value: settings.value.reminderIntervalHours,
+  },
+])
 
 const handleClickOutside = (event: MouseEvent) => {
-  if (!(event.target as HTMLElement).closest('.select-interval')) isOpenInterval.value = false
+  if (!(event.target as HTMLElement).closest('.select')) openMenu.value = null
 }
 
 onMounted(async () => {
@@ -48,9 +60,10 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-const selectInterval = (val: number) => {
-  settings.value.newSeasonCheckIntervalHours = val
-  isOpenInterval.value = false
+const selectInterval = (key: 'episode' | 'reminder', val: number) => {
+  if (key === 'episode') settings.value.newSeasonCheckIntervalHours = val
+  else settings.value.reminderIntervalHours = val
+  openMenu.value = null
 }
 
 const handleSave = async () => {
@@ -81,31 +94,28 @@ const handleSave = async () => {
   <div class="modal-overlay" @click.self="emit('close')">
     <div class="modal-card">
       <div class="modal-header">
-        <h4>Notification Settings</h4>
+        <h4>Notifications</h4>
         <button type="button" class="close-btn" aria-label="Close settings" @click="emit('close')">✕</button>
       </div>
 
       <div class="modal-body">
-        <div class="form-group">
-          <label>New Episode Check Frequency</label>
-          <p class="form-hint">
-            How often to look up waiting shows on TMDB for new episodes or seasons.
-            Checks run at 12:00 PM. {{ nextCheckHint }} If the browser is closed, the check runs when it next opens.
-          </p>
-          <div class="select select-interval" :class="{ 'is-open': isOpenInterval }">
-            <div class="selected" @click.stop="isOpenInterval = !isOpenInterval">
-              <span>{{ selectedIntervalLabel }}</span>
+        <div v-for="field in settingFields" :key="field.key" class="form-group">
+          <label>{{ field.label }}</label>
+          <p class="form-hint">{{ field.hint }}</p>
+          <div class="select" :class="{ 'is-open': openMenu === field.key }">
+            <div class="selected" @click.stop="openMenu = openMenu === field.key ? null : field.key">
+              <span>{{ intervalLabel(field.value) }}</span>
               <svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 512 512" class="arrow">
                 <path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"></path>
               </svg>
             </div>
-            <div v-show="isOpenInterval" class="options">
+            <div v-show="openMenu === field.key" class="options">
               <label
                 v-for="opt in intervalOptions"
                 :key="opt.value"
                 class="option-item"
-                :class="{ active: settings.newSeasonCheckIntervalHours === opt.value }"
-                @click="selectInterval(opt.value)"
+                :class="{ active: field.value === opt.value }"
+                @click="selectInterval(field.key, opt.value)"
               >
                 {{ opt.label }}
               </label>
