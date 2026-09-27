@@ -46,6 +46,13 @@ const linkEditItem = ref<TrackedMedia | null>(null)
 const mediaList = ref<TrackedMedia[]>([])
 const search = ref('')
 const statusFilter = ref<MediaStatus | 'all'>('all')
+const viewMode = ref<'tile' | 'list'>('tile')
+const STATUS_RANK: Record<MediaStatus, number> = {
+  watching: 0,
+  waiting: 1,
+  completed: 2,
+  dropped: 3,
+}
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
 const supportLink = ref('https://buymeacoffee.com/v1c3nt')
@@ -109,11 +116,15 @@ onMounted(() => {
   })
 
   // Storage listener for background notifications update
-  browser.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.nyatching_notification_log) {
-      notificationLogs.value = (changes.nyatching_notification_log.newValue as NotificationItem[]) || []
-    }
-  })
+  try {
+    browser.storage?.onChanged?.addListener((changes, area) => {
+      if (area === 'local' && changes.nyatching_notification_log) {
+        notificationLogs.value = (changes.nyatching_notification_log.newValue as NotificationItem[]) || []
+      }
+    })
+  } catch {
+    // Storage events are unavailable outside the extension.
+  }
 
   document.addEventListener('click', closeSelects)
 })
@@ -156,21 +167,22 @@ const handlePosterError = (id: string) => {
 const stats = computed(() => {
   const total = mediaList.value.length
   const watching = mediaList.value.filter((i) => i.status === 'watching').length
+  const waiting = mediaList.value.filter((i) => i.status === 'waiting').length
   const completed = mediaList.value.filter((i) => i.status === 'completed').length
-  const shows = mediaList.value.filter(isShow)
-  const movies = mediaList.value.filter(isMovie).length
 
-  return { total, watching, completed, shows: shows.length, movies }
+  return { total, watching, waiting, completed }
 })
 
 // Filtering & Sorting
 const filteredMedia = computed(() => {
-  return mediaList.value.filter((item) => {
-    const matchesSearch = item.title.toLowerCase().includes(search.value.toLowerCase().trim())
-    const matchesStatus = statusFilter.value === 'all' || item.status === statusFilter.value
-    const matchesType = typeFilter.value === 'all' || item.mediaType === typeFilter.value
-    return matchesSearch && matchesStatus && matchesType
-  })
+  return mediaList.value
+    .filter((item) => {
+      const matchesSearch = item.title.toLowerCase().includes(search.value.toLowerCase().trim())
+      const matchesStatus = statusFilter.value === 'all' || item.status === statusFilter.value
+      const matchesType = typeFilter.value === 'all' || item.mediaType === typeFilter.value
+      return matchesSearch && matchesStatus && matchesType
+    })
+    .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status])
 })
 
 // Handlers for Show
@@ -224,7 +236,14 @@ const handleNotifyToggle = async (item: TrackedMedia) => {
 }
 
 const notifyLocked = (item: TrackedMedia) =>
-  item.status === 'completed' || item.status === 'dropped'
+  item.status !== 'watching' && !(isShow(item) && item.status === 'waiting')
+
+const notifyTitle = (item: TrackedMedia): string => {
+  if (notifyLocked(item)) return 'Notifications are off for completed and dropped titles'
+  const on = isNotifyEnabled(item)
+  if (item.status === 'watching') return on ? 'Reminders on' : 'Reminders off'
+  return on ? 'New episode notifications on' : 'New episode notifications off'
+}
 
 // Handlers for Movie
 const handleMinutesChange = async (movie: Movie, delta: number) => {
@@ -348,9 +367,8 @@ const stopTitleMarquee = (event: Event) => {
     <!-- Navigation Bar -->
     <header class="navbar">
       <div class="brand">
-        <div>
-          <h1>NYATCHING LIST</h1>
-        </div>
+        <img class="brand-logo" src="/img/logo-48.png" alt="" width="32" height="32" />
+        <h1>NYATCHING LIST</h1>
       </div>
 
       <div class="header-right">
@@ -361,7 +379,7 @@ const stopTitleMarquee = (event: Event) => {
             class="icon-btn notif-btn"
             @click="openNotificationLog"
             aria-label="Notifications"
-            title="Notifications Log"
+            title="Notifications"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -377,8 +395,8 @@ const stopTitleMarquee = (event: Event) => {
             type="button"
             class="icon-btn"
             @click="isSettingsOpen = true"
-            aria-label="Notification Settings"
-            title="Notification Settings"
+            aria-label="Settings"
+            title="Settings"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3" />
@@ -429,14 +447,14 @@ const stopTitleMarquee = (event: Event) => {
     <aside v-if="isNotificationsOpen" class="notif-drawer-overlay" @click.self="isNotificationsOpen = false">
       <div class="notif-drawer">
         <div class="drawer-header">
-          <h3>Notifications Log</h3>
+          <h3>Notifications</h3>
           <div class="drawer-actions">
             <button
               v-if="notificationLogs.length > 0"
               class="clear-all-btn"
               @click="handleClearAllNotifications"
             >
-              Clear Log
+              Clear
             </button>
             <button class="delete-btn" title="Delete" @click="isNotificationsOpen = false">
               <svg viewBox="0 0 24 24" width="18" height="18">
@@ -452,7 +470,7 @@ const stopTitleMarquee = (event: Event) => {
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
-            <p>No recent release notifications</p>
+            <p>No notifications</p>
           </div>
 
           <div v-else class="notif-list">
@@ -511,8 +529,8 @@ const stopTitleMarquee = (event: Event) => {
           <span class="stat-value">{{ stats.completed }}</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">Shows / Movies</span>
-          <span class="stat-value">{{ stats.shows }} / {{ stats.movies }}</span>
+          <span class="stat-label">Currently Waiting</span>
+          <span class="stat-value">{{ stats.waiting }}</span>
         </div>
       </section>
 
@@ -530,6 +548,11 @@ const stopTitleMarquee = (event: Event) => {
             <button class="segment-btn" :class="{ active: typeFilter === 'all' }" @click="typeFilter = 'all'">All</button>
             <button class="segment-btn" :class="{ active: typeFilter === 'show' }" @click="typeFilter = 'show'">Shows</button>
             <button class="segment-btn" :class="{ active: typeFilter === 'movie' }" @click="typeFilter = 'movie'">Movies</button>
+          </div>
+
+          <div class="segmented" role="group" aria-label="Layout">
+            <button type="button" class="segment-btn" :class="{ active: viewMode === 'tile' }" @click="viewMode = 'tile'">Tiles</button>
+            <button type="button" class="segment-btn" :class="{ active: viewMode === 'list' }" @click="viewMode = 'list'">List</button>
           </div>
 
           <!-- Custom Toolbar Status Dropdown -->
@@ -569,10 +592,9 @@ const stopTitleMarquee = (event: Event) => {
         <p v-else>Use the popup extension menu to add your first show or movie!</p>
       </div>
 
-      <div v-else class="media-grid">
+      <div v-else class="media-grid" :class="{ 'is-list': viewMode === 'list' }">
         <article v-for="item in filteredMedia" :key="item.id" class="media-card" :class="{ 'is-select-open': openSelectKey === item.id }">
           <div class="card-top">
-            <span class="type-badge" :class="item.mediaType">{{ item.mediaType }}</span>
             <button class="delete-btn" title="Delete" @click="handleDelete(item.id)">
               <svg viewBox="0 0 24 24" width="18" height="18">
                 <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 18L18 6M6 6l12 12" />
@@ -635,6 +657,7 @@ const stopTitleMarquee = (event: Event) => {
                 </span>
               </h3>
               <div class="title-actions">
+                <span class="type-badge" :class="item.mediaType">{{ item.mediaType }}</span>
                 <button
                   type="button"
                   class="link-badge"
@@ -644,19 +667,13 @@ const stopTitleMarquee = (event: Event) => {
                   Edit Link
                 </button>
                 <button
-                  v-if="isShow(item)"
+                  v-if="isShow(item) || item.status === 'watching'"
                   type="button"
                   class="link-badge notify-badge"
                   :class="{ 'is-on': isNotifyEnabled(item) && !notifyLocked(item), 'is-off': !isNotifyEnabled(item) || notifyLocked(item) }"
                   :disabled="notifyLocked(item)"
                   :aria-pressed="isNotifyEnabled(item) && !notifyLocked(item)"
-                  :title="
-                    notifyLocked(item)
-                      ? 'Notifications are off for completed and dropped titles'
-                      : isNotifyEnabled(item)
-                        ? 'New episode and season notifications on'
-                        : 'New episode and season notifications off'
-                  "
+                  :title="notifyTitle(item)"
                   @click="handleNotifyToggle(item)"
                 >
                   Notify
@@ -760,7 +777,7 @@ const stopTitleMarquee = (event: Event) => {
                       st === 'waiting'
                         ? 'Waiting: notify when a new episode or season is out'
                         : st === 'watching'
-                          ? 'Watching: notify when the next episode or season airs'
+                          ? 'Watching: remind you to update progress'
                           : undefined
                     "
                     @click="handleStatusChange(item, st)"
@@ -780,7 +797,7 @@ const stopTitleMarquee = (event: Event) => {
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         created by v1nc3t
       </a>
-      <span class="footer-divider" aria-hidden="true">•</span>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         support v1nc3t
       </a>
@@ -789,48 +806,12 @@ const stopTitleMarquee = (event: Event) => {
 </template>
 
 <style>
-:root.theme-dark {
-  --bg: #09090b;
-  --bg-card: #121215;
-  --bg-input: #18181c;
-  --border: #27272a;
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --accent: #10b981;
-  --accent-hover: #059669;
-  --accent-contrast: #000000;
-  --shadow: rgba(0, 0, 0, 0.65);
-
-  /* Badge Text Colors for Dark Mode */
-  --show-text: #005f88;
-  --movie-text: #762850;
-}
-
-:root.theme-light {
-  --bg: #f8f9fa;
-  --bg-card: #ffffff;
-  --bg-input: #f1f3f5;
-  --border: #e9ecef;
-  --text-primary: #212529;
-  --text-secondary: #6c757d;
-  --text-muted: #adb5bd;
-  --accent: #2f9d6f;
-  --accent-hover: #26855d;
-  --accent-contrast: #ffffff;
-  --shadow: rgba(0, 0, 0, 0.05);
-
-  /* Badge Text Colors for Light Mode */
-  --show-text: #004f77;
-  --movie-text: #8c1a4d;
-}
-
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Courier New', Courier, monospace;
   font-size: 16px;
 }
 </style>
@@ -862,19 +843,32 @@ html, body {
   gap: 0.75rem;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
 .brand h1 {
   margin: 0;
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--accent);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.14em;
   line-height: 1.1;
 }
 
 .icon-btn {
   position: relative;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   color: var(--text-primary);
   width: 2.4rem;
   height: 2.4rem;
@@ -887,7 +881,7 @@ html, body {
 }
 
 .icon-btn:hover {
-  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* Notification Bell Badge */
@@ -895,8 +889,8 @@ html, body {
   position: absolute;
   top: -2px;
   right: -2px;
-  background: #ef4444;
-  color: #ffffff;
+  background: var(--danger);
+  color: var(--accent-contrast);
   font-size: 0.65rem;
   font-weight: 800;
   padding: 0.1rem 0.35rem;
@@ -910,7 +904,7 @@ html, body {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
+  backdrop-filter: none;
   z-index: 1000;
   display: flex;
   justify-content: flex-end;
@@ -956,7 +950,7 @@ html, body {
 }
 
 .clear-all-btn:hover {
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .drawer-content {
@@ -1010,8 +1004,8 @@ html, body {
   display: flex;
   gap: 0.75rem;
   padding: 0.75rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 8px;
 }
 
@@ -1087,11 +1081,11 @@ html, body {
 }
 
 .dismiss-notif-btn:hover {
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .content {
-  max-width: 1375px;
+  max-width: 1000px;
   width: 100%;
   box-sizing: border-box;
   margin: 0 auto;
@@ -1108,8 +1102,8 @@ html, body {
 }
 
 .stat-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 12px;
   padding: 1.15rem 1.35rem;
   display: flex;
@@ -1118,7 +1112,7 @@ html, body {
 }
 
 .stat-card.accent {
-  border-color: var(--accent);
+  border: none;
 }
 
 .stat-label {
@@ -1169,7 +1163,7 @@ html, body {
   padding: 0.7rem 0.95rem 0.7rem 2.6rem;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--bg-card);
+  background: transparent;
   color: var(--text-primary);
   font-size: 0.95rem;
   box-sizing: border-box;
@@ -1189,7 +1183,7 @@ html, body {
 
 .segmented {
   display: inline-flex;
-  background: var(--bg-card);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.25rem;
@@ -1238,7 +1232,7 @@ html, body {
 
 .media-card {
   position: relative;
-  background: var(--bg-card);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.1rem;
@@ -1257,6 +1251,145 @@ html, body {
   z-index: 10;
 }
 
+.media-grid.is-list {
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  container: media-list / inline-size;
+}
+
+.media-grid.is-list .media-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto 8rem auto;
+  grid-template-areas: "poster title progress status delete";
+  align-items: center;
+  column-gap: 0.85rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.media-grid.is-list .media-card:hover {
+  transform: none;
+}
+
+.media-grid.is-list .card-top,
+.media-grid.is-list .card-header-main,
+.media-grid.is-list .card-bottom {
+  display: contents;
+}
+
+.media-grid.is-list .poster-container {
+  grid-area: poster;
+  width: 42px;
+  height: 60px;
+}
+
+.media-grid.is-list .card-title-block {
+  grid-area: title;
+  height: auto;
+  justify-content: center;
+  gap: 0.28rem;
+}
+
+.media-grid.is-list .card-title {
+  padding-top: 0;
+  font-size: 0.98rem;
+}
+
+.media-grid.is-list .card-title-block .title-actions {
+  margin-top: 0;
+}
+
+.media-grid.is-list .progress-container {
+  grid-area: progress;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 1.15rem;
+  min-width: 0;
+}
+
+.media-grid.is-list .progress-box {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  background: transparent;
+  padding: 0;
+  gap: 0.45rem;
+}
+
+.media-grid.is-list .progress-info {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.media-grid.is-list .btn-group {
+  flex-shrink: 0;
+}
+
+.media-grid.is-list .status-row-box {
+  grid-area: status;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.media-grid.is-list .status-label {
+  display: none;
+}
+
+.media-grid.is-list .status-row-box .select,
+.media-grid.is-list .status-row-box .selected {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.media-grid.is-list .status-row-box .selected {
+  justify-content: space-between;
+}
+
+.media-grid.is-list .title-actions .type-badge {
+  padding: 0.12rem 0.4rem;
+  font-weight: 700;
+}
+
+.media-grid:not(.is-list) .card-top {
+  justify-content: flex-end;
+}
+
+.media-grid:not(.is-list) .type-badge {
+  position: absolute;
+  top: 1.1rem;
+  left: 1.1rem;
+}
+
+.media-grid.is-list .delete-btn {
+  grid-area: delete;
+}
+
+@container media-list (max-width: 860px) {
+  .media-grid.is-list .media-card {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "poster title delete"
+      "progress progress progress"
+      "status status status";
+    row-gap: 0.45rem;
+  }
+
+  .media-grid.is-list .status-row-box {
+    justify-self: start;
+    width: 8rem;
+  }
+}
+
+@container media-list (max-width: 520px) {
+  .media-grid.is-list .progress-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .card-top {
   display: flex;
   justify-content: space-between;
@@ -1272,9 +1405,9 @@ html, body {
   border-radius: 6px;
   font-weight: 800;
   letter-spacing: 0.05em;
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  background-color: transparent;
+  border: none;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .link-badge {
@@ -1287,7 +1420,6 @@ html, body {
 
 .link-badge:hover {
   color: var(--accent-hover);
-  border-color: var(--accent);
 }
 
 .type-badge.show {
@@ -1308,7 +1440,7 @@ html, body {
   align-items: center;
 }
 
-.delete-btn:hover { color: #ff5252; }
+.delete-btn:hover { color: var(--text-primary); }
 
 /* Poster Container & Card Header */
 .card-header-main {
@@ -1324,8 +1456,8 @@ html, body {
   flex-shrink: 0;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
 }
 
 .poster-img {
@@ -1338,7 +1470,7 @@ html, body {
 .poster-placeholder {
   width: 100%;
   height: 100%;
-  border: 1px dashed var(--border);
+  border: none;
   box-sizing: border-box;
   border-radius: 8px;
   display: flex;
@@ -1394,7 +1526,6 @@ html, body {
 
 .notify-badge.is-off:hover {
   color: var(--text-secondary);
-  border-color: var(--text-muted);
 }
 
 .notify-badge:disabled {
@@ -1404,7 +1535,6 @@ html, body {
 
 .notify-badge:disabled:hover {
   color: var(--text-muted);
-  border-color: var(--border);
 }
 
 .card-title {
@@ -1501,8 +1631,9 @@ html, body {
   align-items: center;
   justify-content: flex-end;
   gap: 0.2rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.2rem 0.45rem;
   transition: border-color 0.12s ease;
@@ -1577,8 +1708,8 @@ html, body {
 }
 
 .stepper-btn {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   color: var(--accent);
   padding: 0.25rem 0.55rem;
   border-radius: 5px;
@@ -1603,10 +1734,10 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--bg-input);
-  padding: 0.45rem 0.75rem;
+  background: transparent;
+  padding: 0.45rem 0;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .select {
@@ -1625,7 +1756,7 @@ html, body {
 }
 
 .selected {
-  background-color: var(--bg-card);
+  background-color: transparent;
   border: 1px solid var(--border);
   padding: 0.3rem 0.6rem;
   border-radius: 6px;
@@ -1701,7 +1832,7 @@ html, body {
   text-align: center;
   padding: 4.5rem 2rem;
   background: var(--bg-card);
-  border: 1px dashed var(--border);
+  border: none;
   border-radius: 12px;
 }
 
@@ -1734,7 +1865,7 @@ html, body {
 
 .footer-link:hover {
   color: var(--accent);
-  text-decoration: line-through;
+  text-decoration: underline;
   text-decoration-color: var(--accent);
 }
 
@@ -1797,6 +1928,7 @@ html, body {
   .media-grid {
     grid-template-columns: 1fr;
   }
+
 
   .notif-drawer {
     width: 100%;

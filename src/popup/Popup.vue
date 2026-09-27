@@ -469,6 +469,7 @@ const handleAddMediaSubmit = async () => {
           @click="openDashboard"
           title="Open Dashboard"
         >
+          <img class="brand-logo" src="/img/logo-32.png" alt="" width="22" height="22" />
           <h1>NYATCHING LIST</h1>
         </button>
         <p v-if="!isModalOpen" class="subtitle">List of tv shows and movies currently watching</p>
@@ -665,7 +666,7 @@ const handleAddMediaSubmit = async () => {
                   st === 'waiting'
                     ? 'Waiting: notify when a new episode or season is out'
                     : st === 'watching'
-                      ? 'Watching: notify when the next episode or season airs'
+                      ? 'Watching: remind you to update progress'
                       : undefined
                 "
                 @click="setStatus(st)"
@@ -827,7 +828,7 @@ const handleAddMediaSubmit = async () => {
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         created by v1nc3t
       </a>
-      <span class="footer-divider" aria-hidden="true">•</span>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         support v1nc3t
       </a>
@@ -836,48 +837,6 @@ const handleAddMediaSubmit = async () => {
 </template>
 
 <style>
-:root.theme-dark {
-  --bg: #09090b;
-  --bg-card: #121215;
-  --bg-input: #18181c;
-  --border: #27272a;
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --accent: #10b981;
-  --accent-hover: #059669;
-  --accent-contrast: #000000;
-  --accent-soft: rgba(16, 185, 129, 0.22);
-  --error-bg: #4a151b;
-  --error-text: #ff8a80;
-  --shadow: rgba(0, 0, 0, 0.65);
-
-  --show-text: #38bdf8;
-  --movie-text: #f472b6;
-  color-scheme: dark;
-}
-
-:root.theme-light {
-  --bg: #f8f9fa;
-  --bg-card: #ffffff;
-  --bg-input: #f1f3f5;
-  --border: #e9ecef;
-  --text-primary: #212529;
-  --text-secondary: #6c757d;
-  --text-muted: #adb5bd;
-  --accent: #2f9d6f;
-  --accent-hover: #26855d;
-  --accent-contrast: #ffffff;
-  --accent-soft: rgba(47, 157, 111, 0.16);
-  --error-bg: #fbe7e6;
-  --error-text: #c0392b;
-  --shadow: rgba(0, 0, 0, 0.05);
-
-  --show-text: #004f77;
-  --movie-text: #8c1a4d;
-  color-scheme: light;
-}
-
 html,
 body {
   margin: 0;
@@ -887,9 +846,9 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Courier New', Courier, monospace;
   font-size: 16px;
 }
 
@@ -920,7 +879,7 @@ body::-webkit-scrollbar {
   padding: 0;
   background-color: var(--bg);
   color: var(--text-primary);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Courier New', Courier, monospace;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
@@ -950,12 +909,22 @@ body::-webkit-scrollbar {
 }
 
 .title-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   background: none;
   border: none;
   padding: 0;
   margin: 0;
   cursor: pointer;
   text-align: left;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
 }
 
 .brand h1 {
@@ -963,7 +932,7 @@ body::-webkit-scrollbar {
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--accent);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
   line-height: 1.1;
   transition: color 0.15s ease;
 }
@@ -988,16 +957,16 @@ body::-webkit-scrollbar {
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   cursor: pointer;
   padding: 0;
-  transition: border-color 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 .icon-btn:hover {
-  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .content {
@@ -1024,8 +993,8 @@ body::-webkit-scrollbar {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 12px;
   padding: 1rem 1.1rem;
   box-shadow: 0 2px 6px var(--shadow);
@@ -1033,7 +1002,7 @@ body::-webkit-scrollbar {
 }
 
 .count-card:hover {
-  border-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .count-display {
@@ -1077,7 +1046,7 @@ body::-webkit-scrollbar {
 .primary-btn {
   background-color: var(--accent);
   color: var(--accent-contrast);
-  border: 1px solid var(--accent);
+  border: none;
 }
 
 .primary-btn:hover {
@@ -1086,23 +1055,22 @@ body::-webkit-scrollbar {
 }
 
 .secondary-btn {
-  background-color: var(--bg-input);
+  background-color: transparent;
   color: var(--text-secondary);
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .secondary-btn:hover {
-  background-color: var(--bg-card);
+  background-color: transparent;
   color: var(--text-primary);
-  border-color: var(--text-muted);
 }
 
 /* ---------- Add-media View ---------- */
 .add-panel {
   width: 100%;
   text-align: left;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 12px;
   padding: 0.55rem 0.7rem 0.6rem;
   box-shadow: 0 2px 8px var(--shadow);
@@ -1133,7 +1101,7 @@ body::-webkit-scrollbar {
   gap: 0.3rem;
   background: var(--accent-soft);
   color: var(--accent);
-  border: 1px solid var(--accent);
+  border: none;
   padding: 0.28rem 0.5rem;
   border-radius: 8px;
   font-size: 0.68rem;
@@ -1164,8 +1132,9 @@ body::-webkit-scrollbar {
 .form-group input {
   padding: 0.32rem 0.55rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
   color: var(--text-primary);
   font-size: 0.78rem;
   font-family: inherit;
@@ -1243,7 +1212,7 @@ body::-webkit-scrollbar {
   width: 22px;
   height: 32px;
   background: var(--bg-input);
-  border: 1px dashed var(--border);
+  border: none;
   border-radius: 4px;
   flex-shrink: 0;
 }
@@ -1278,8 +1247,8 @@ body::-webkit-scrollbar {
   letter-spacing: 0.05em;
   padding: 0.15rem 0.4rem;
   border-radius: 6px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
 }
 
 .suggestion-meta .badge.show {
@@ -1313,8 +1282,9 @@ body::-webkit-scrollbar {
 }
 
 .selected {
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
+  background-color: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
   padding: 0.32rem 0.55rem;
   border-radius: 8px;
   font-size: 0.78rem;
@@ -1415,8 +1385,8 @@ body::-webkit-scrollbar {
 .segmented {
   display: flex;
   width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 8px;
   padding: 0.18rem;
   gap: 0.18rem;
@@ -1486,7 +1456,7 @@ body::-webkit-scrollbar {
 
 .footer-link:hover {
   color: var(--accent);
-  text-decoration: line-through;
+  text-decoration: underline;
   text-decoration-color: var(--accent);
 }
 

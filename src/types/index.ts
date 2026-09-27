@@ -2,7 +2,9 @@ export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
 
 export interface AppSettings {
   newSeasonCheckIntervalHours: number // -1 means Never
+  reminderIntervalHours: number // -1 means Never
   lastReleaseCheckAt?: number
+  lastReminderCheckAt?: number
 }
 
 export interface BaseMedia {
@@ -15,8 +17,12 @@ export interface BaseMedia {
   tmdbId?: number;
   createdAt: number;
   updatedAt: number;
-  /** When false, this item never sends notifications. Missing means on. */
+  /** When false, release alerts and watching reminders stay off. Missing means on. */
   notify?: boolean
+  /** Progress or status change. Reminder clock. */
+  lastActivityAt?: number
+  /** Last watching reminder sent for this item. */
+  lastRemindedAt?: number
 }
 
 export interface Show extends BaseMedia {
@@ -28,6 +34,8 @@ export interface Show extends BaseMedia {
   totalEpisodes?: number;
   lastNotifiedSeason?: number;
   lastNotifiedEpisode?: number;
+  /** When the last new-episode alert for this show was sent. */
+  lastReleaseNotifiedAt?: number;
 }
 
 export interface Movie extends BaseMedia {

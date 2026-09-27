@@ -44,15 +44,19 @@ export function useTheme() {
   initTheme()
 
   // 2. Reactively listen to storage changes from OTHER pages/tabs
-  browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes[THEME_STORAGE_KEY]) {
-      const newTheme = changes[THEME_STORAGE_KEY].newValue as Theme
-      if (newTheme && newTheme !== theme.value) {
-        theme.value = newTheme
-        applyThemeToDocument(newTheme)
+  try {
+    browser.storage?.onChanged?.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes[THEME_STORAGE_KEY]) {
+        const newTheme = changes[THEME_STORAGE_KEY].newValue as Theme
+        if (newTheme && newTheme !== theme.value) {
+          theme.value = newTheme
+          applyThemeToDocument(newTheme)
+        }
       }
-    }
-  })
+    })
+  } catch {
+    // Storage events are unavailable outside the extension.
+  }
 
   // 3. Save theme changes to extension storage when toggled
   const toggleTheme = async () => {

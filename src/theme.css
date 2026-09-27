@@ -1,0 +1,74 @@
+/* Dark mode is #011502. #01200F is the light-mode ink. The rest is dusty sage. */
+:root,
+:root.theme-dark {
+  color-scheme: dark;
+  --bg: #011502;
+  --bg-card: #011502;
+  --bg-input: #011502;
+  --border: #5c7d66;
+  --text-primary: #d0ddd0;
+  --text-secondary: #8eaa93;
+  --text-muted: #7d9a84;
+  --accent: #8faf93;
+  --accent-hover: #a8c4ab;
+  --accent-contrast: #011502;
+  --accent-soft: rgba(143, 175, 147, 0.24);
+  --danger: #c4928c;
+  --error-bg: #2a1c1b;
+  --error-text: #e0b5ae;
+  --shadow: rgba(1, 21, 2, 0.55);
+  --show-text: #a3bba6;
+  --movie-text: #8eb8b0;
+}
+
+:root.theme-light {
+  color-scheme: light;
+  --bg: #e7f0e4;
+  --bg-card: #f4f8f3;
+  --bg-input: #dce8d8;
+  --border: #3d5a46;
+  --text-primary: #011502;
+  --text-secondary: #01200F;
+  --text-muted: #3d5a46;
+  --accent: #01200F;
+  --accent-hover: #011502;
+  --accent-contrast: #e7f0e4;
+  --accent-soft: rgba(1, 32, 15, 0.14);
+  --danger: #7a4540;
+  --error-bg: #f3e4e1;
+  --error-text: #6e3e3a;
+  --shadow: rgba(1, 21, 2, 0.12);
+  --show-text: #01200F;
+  --movie-text: #24564f;
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: 'Courier New', Courier, monospace;
+}
+
+:root.theme-dark body {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.16) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* ponytail: components set radius and soft shadows in dozens of rules */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+

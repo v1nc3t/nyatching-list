@@ -9,6 +9,14 @@ import {
   TMDBTvDetails,
 } from '../services/tmdb'
 import { decideReleaseAction, isNotifiableShow, buildShowMetaUpdates, ReleaseNotice } from './release-check'
+import {
+  buildReminderNotice,
+  isReminderDue,
+  pickReleases,
+  pickReminders,
+  releasesSentToday,
+  remindersSentToday,
+} from './reminder-check'
 import { Show, TrackedMedia } from '../types'
 import {
   TMDBAiredEpisode,
@@ -91,12 +99,19 @@ const resolveLatestAired = async (
   return latest
 }
 
-const processShowRelease = async (show: Show): Promise<void> => {
-  if (!show.tmdbId) return
+type PendingRelease = {
+  show: Show
+  notice: ReleaseNotice
+  lastNotifiedSeason: number
+  lastNotifiedEpisode: number
+}
+
+const processShowRelease = async (show: Show): Promise<PendingRelease | null> => {
+  if (!show.tmdbId) return null
 
   try {
     const tmdbData = await getTMDBDetails(show.tmdbId, 'show')
-    if (!tmdbData) return
+    if (!tmdbData) return null
 
     const latest = await resolveLatestAired(show, tmdbData)
     const { totalSeasons, totalEpisodes, seasonEpisodeCount } = resolveShowTotals(
@@ -111,14 +126,27 @@ const processShowRelease = async (show: Show): Promise<void> => {
       seasonEpisodeCount
     )
 
-    if (decision.notify && decision.notice) {
-      await sendNotice(show, decision.notice, buildReleaseNotificationId(show.id))
+    const { lastNotifiedSeason, lastNotifiedEpisode, ...meta } = decision.updates
+    if (Object.keys(meta).length > 0) {
+      await updateMedia({ id: show.id, ...meta })
     }
-    if (Object.keys(decision.updates).length > 0) {
-      await updateMedia({ id: show.id, ...decision.updates })
+    if (
+      !decision.notify ||
+      !decision.notice ||
+      lastNotifiedSeason === undefined ||
+      lastNotifiedEpisode === undefined
+    ) {
+      return null
+    }
+    return {
+      show,
+      notice: decision.notice,
+      lastNotifiedSeason,
+      lastNotifiedEpisode,
     }
   } catch (err) {
     console.error(`[Nyatching] Error processing show "${show.title}":`, err)
+    return null
   }
 }
 
@@ -126,8 +154,61 @@ export const checkShowReleases = async (): Promise<void> => {
   const seasonIntervalHours = (await getSettings()).newSeasonCheckIntervalHours ?? 24
   if (seasonIntervalHours <= 0) return
 
-  for (const show of (await getAllMedia()).filter(isNotifiableShow)) {
-    await processShowRelease(show)
+  const now = Date.now()
+  const all = await getAllMedia()
+  const pending: PendingRelease[] = []
+  for (const show of all.filter(isNotifiableShow)) {
+    const found = await processShowRelease(show)
+    if (found) pending.push(found)
   }
-  await saveSettings({ lastReleaseCheckAt: Date.now() })
+
+  const pendingById = new Map(pending.map((item) => [item.show.id, item]))
+  for (const show of pickReleases(
+    pending.map((item) => item.show),
+    releasesSentToday(all, now)
+  )) {
+    const item = pendingById.get(show.id)
+    if (!item) continue
+    await sendNotice(item.show, item.notice, buildReleaseNotificationId(item.show.id))
+    await updateMedia({
+      id: item.show.id,
+      lastNotifiedSeason: item.lastNotifiedSeason,
+      lastNotifiedEpisode: item.lastNotifiedEpisode,
+      lastReleaseNotifiedAt: now,
+    })
+  }
+  await saveSettings({ lastReleaseCheckAt: now })
+}
+
+export const checkReminders = async (): Promise<void> => {
+  const intervalHours = (await getSettings()).reminderIntervalHours ?? -1
+  if (intervalHours <= 0) return
+
+  const now = Date.now()
+  const all = await getAllMedia()
+  const due = all.filter((item) => isReminderDue(item, intervalHours, now))
+  for (const item of pickReminders(due, remindersSentToday(all, now))) {
+    const notice = buildReminderNotice(item)
+    await addNotificationLog({
+      showId: notice.showId,
+      title: notice.logTitle,
+      message: notice.logMessage,
+      posterPath: notice.posterPath,
+      watchingUrl: notice.watchingUrl,
+    })
+    const shown = await createOsNotification({
+      id: buildReleaseNotificationId(notice.showId),
+      title: notice.title,
+      message: notice.message,
+    })
+    if (!shown) {
+      console.error('[Nyatching List] OS notification was not shown for', item.title)
+    }
+    await updateMedia({
+      id: item.id,
+      lastRemindedAt: now,
+      lastActivityAt: item.lastActivityAt ?? item.updatedAt,
+    })
+  }
+  await saveSettings({ lastReminderCheckAt: now })
 }
