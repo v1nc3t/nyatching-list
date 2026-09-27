@@ -1,7 +1,13 @@
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
 import { getSettings } from '../storage'
-import { computeNextAlarmWhen, nextNotifyAt, notifyAtOnDate, shouldCatchUpMissedCheck } from './release-check'
+import {
+  computeNextAlarmWhen,
+  isNoonCheckDue,
+  nextNotifyAt,
+  notifyAtOnDate,
+  shouldCatchUpMissedCheck,
+} from './release-check'
 
 export const ALARM_NAME = 'nyatching_daily_check'
 
@@ -32,13 +38,8 @@ export const nextCheckTimestamp = (settings: AppSettings, now: number = Date.now
   return Math.min(...times)
 }
 
-export const isReleaseCheckDue = (settings: AppSettings, now: number = Date.now()): boolean => {
-  const interval = settings.newSeasonCheckIntervalHours ?? 24
-  if (interval <= 0) return false
-  const last = settings.lastReleaseCheckAt ?? 0
-  if (last <= 0) return true
-  return now - last >= interval * 60 * 60 * 1000
-}
+export const isReleaseCheckDue = (settings: AppSettings, now: number = Date.now()): boolean =>
+  isNoonCheckDue(settings.newSeasonCheckIntervalHours ?? 24, settings.lastReleaseCheckAt, now)
 
 export const scheduleReleaseCheckAlarm = async (
   settings?: AppSettings

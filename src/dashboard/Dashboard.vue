@@ -777,7 +777,7 @@ const stopTitleMarquee = (event: Event) => {
                       st === 'waiting'
                         ? 'Waiting: notify when a new episode or season is out'
                         : st === 'watching'
-                          ? 'Watching: notify when the next episode or season airs'
+                          ? 'Watching: remind you to update progress'
                           : undefined
                     "
                     @click="handleStatusChange(item, st)"

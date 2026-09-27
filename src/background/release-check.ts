@@ -42,19 +42,39 @@ export const nextNotifyAt = (now: number = Date.now()): number => {
   return tomorrow.getTime()
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Local noons between the last check's noon and today's noon. */
+const noonsSince = (lastCheckAt: number, now: number): number =>
+  Math.round((notifyAtOnDate(now) - notifyAtOnDate(lastCheckAt)) / DAY_MS)
+
+/** Today's noon has arrived, and this interval's noon slot has not run yet. */
+export const isNoonCheckDue = (
+  intervalHours: number,
+  lastCheckAt: number | undefined,
+  now: number = Date.now()
+): boolean => {
+  if (intervalHours <= 0) return false
+  const todaySlot = notifyAtOnDate(now)
+  const last = lastCheckAt ?? 0
+  if (now < todaySlot || last >= todaySlot) return false
+  if (intervalHours <= 24 || last <= 0) return true
+  return noonsSince(last, now) * 24 >= intervalHours
+}
+
 export const computeNextAlarmWhen = (
   seasonIntervalHours: number,
   lastReleaseCheckAt: number | undefined,
   now: number = Date.now()
 ): number | null => {
   if (seasonIntervalHours <= 0) return null
-  const periodInMinutes = Math.max(1, seasonIntervalHours * 60)
 
   let when = nextNotifyAt(now)
   const last = lastReleaseCheckAt ?? 0
-  if (last > 0 && periodInMinutes > 24 * 60) {
-    const earliest = last + periodInMinutes * 60 * 1000
-    while (when < earliest) {
+  if (last > 0 && seasonIntervalHours > 24) {
+    const due = new Date(notifyAtOnDate(last))
+    due.setDate(due.getDate() + Math.ceil(seasonIntervalHours / 24))
+    while (when < due.getTime()) {
       const nextDay = new Date(when)
       nextDay.setDate(nextDay.getDate() + 1)
       when = nextDay.getTime()
@@ -68,14 +88,8 @@ export const shouldCatchUpMissedCheck = (
   lastReleaseCheckAt: number | undefined,
   now: number = Date.now()
 ): boolean => {
-  if (seasonIntervalHours <= 0) return false
-
-  const last = lastReleaseCheckAt ?? 0
-  if (last <= 0) return false
-
-  const todaySlot = notifyAtOnDate(now)
-  const periodMs = seasonIntervalHours * 60 * 60 * 1000
-  return now >= todaySlot && last < todaySlot && now - last >= periodMs
+  if ((lastReleaseCheckAt ?? 0) <= 0) return false
+  return isNoonCheckDue(seasonIntervalHours, lastReleaseCheckAt, now)
 }
 
 export const buildShowMetaUpdates = (
@@ -159,4 +173,23 @@ export const decideReleaseAction = (
       lastNotifiedEpisode: next.episode,
     },
   }
+}
+
+export const selfCheckReleaseSchedule = (): void => {
+  const at = (day: number, hour: number, minute = 0) =>
+    new Date(2026, 8, day, hour, minute, 0, 0).getTime()
+  const last = at(14, 12, 5)
+
+  if (!isNoonCheckDue(24, last, at(15, 12, 0))) throw new Error('daily noon is due')
+  if (isNoonCheckDue(24, last, at(15, 11, 59))) throw new Error('before noon is not due')
+  if (isNoonCheckDue(24, at(15, 12, 5), at(15, 13, 0))) throw new Error('already ran this noon')
+  if (!isNoonCheckDue(168, last, at(21, 12, 0))) throw new Error('weekly noon is due')
+  if (isNoonCheckDue(168, last, at(20, 12, 0))) throw new Error('weekly is early')
+  if (isNoonCheckDue(-1, last, at(15, 12, 0))) throw new Error('never is off')
+  if (shouldCatchUpMissedCheck(24, undefined, at(15, 12, 0))) throw new Error('first check waits')
+  if (!shouldCatchUpMissedCheck(24, last, at(15, 12, 2))) throw new Error('catch-up uses noon')
+  if (computeNextAlarmWhen(168, last, at(21, 11, 0)) !== at(21, 12, 0)) {
+    throw new Error('weekly alarm stays on the due noon')
+  }
+  if (computeNextAlarmWhen(24, last, last) !== at(15, 12, 0)) throw new Error('daily alarm is next noon')
 }
