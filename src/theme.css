@@ -1,9 +1,9 @@
-/* Surfaces are #011502 and #01200F. The rest is dusty sage. */
+/* Dark mode is #011502. #01200F is the light-mode ink. The rest is dusty sage. */
 :root,
 :root.theme-dark {
   color-scheme: dark;
   --bg: #011502;
-  --bg-card: #01200F;
+  --bg-card: #011502;
   --bg-input: #011502;
   --border: #5c7d66;
   --text-primary: #d0ddd0;

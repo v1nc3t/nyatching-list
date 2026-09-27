@@ -226,9 +226,10 @@ const handleSave = async () => {
 }
 
 .selected {
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  padding: 0.55rem 0.85rem;
+  background-color: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0;
   border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
@@ -325,7 +326,7 @@ const handleSave = async () => {
 .primary-btn {
   background-color: var(--accent);
   color: var(--accent-contrast);
-  border: 1px solid var(--accent);
+  border: none;
 }
 
 .primary-btn:hover {
@@ -339,15 +340,14 @@ const handleSave = async () => {
 }
 
 .secondary-btn {
-  background-color: var(--bg-input);
+  background-color: transparent;
   color: var(--text-secondary);
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .secondary-btn:hover {
-  background-color: var(--bg-card);
+  background-color: transparent;
   color: var(--text-primary);
-  border-color: var(--text-muted);
 }
 
 .primary-btn:active,

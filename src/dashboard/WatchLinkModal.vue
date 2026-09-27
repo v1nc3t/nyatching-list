@@ -148,10 +148,11 @@ const handleSave = async () => {
 }
 
 .form-group input {
-  padding: 0.55rem 0.85rem;
+  padding: 0.55rem 0;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
   color: var(--text-primary);
   font-size: 0.9rem;
   font-family: inherit;
@@ -193,7 +194,7 @@ const handleSave = async () => {
 .primary-btn {
   background-color: var(--accent);
   color: var(--accent-contrast);
-  border: 1px solid var(--accent);
+  border: none;
 }
 
 .primary-btn:hover {
@@ -207,15 +208,14 @@ const handleSave = async () => {
 }
 
 .secondary-btn {
-  background-color: var(--bg-input);
+  background-color: transparent;
   color: var(--text-secondary);
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .secondary-btn:hover {
-  background-color: var(--bg-card);
+  background-color: transparent;
   color: var(--text-primary);
-  border-color: var(--text-muted);
 }
 
 .primary-btn:active,

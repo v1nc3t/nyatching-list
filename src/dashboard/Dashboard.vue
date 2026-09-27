@@ -829,7 +829,7 @@ html, body {
   align-items: center;
   padding: 1.15rem 2.5rem;
   background: var(--bg-card);
-  border-bottom: 3px double var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-right {
@@ -867,8 +867,8 @@ html, body {
 
 .icon-btn {
   position: relative;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   color: var(--text-primary);
   width: 2.4rem;
   height: 2.4rem;
@@ -881,7 +881,7 @@ html, body {
 }
 
 .icon-btn:hover {
-  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* Notification Bell Badge */
@@ -1004,8 +1004,8 @@ html, body {
   display: flex;
   gap: 0.75rem;
   padding: 0.75rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 8px;
 }
 
@@ -1102,8 +1102,8 @@ html, body {
 }
 
 .stat-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 12px;
   padding: 1.15rem 1.35rem;
   display: flex;
@@ -1112,7 +1112,7 @@ html, body {
 }
 
 .stat-card.accent {
-  border-color: var(--accent);
+  border: none;
 }
 
 .stat-label {
@@ -1163,7 +1163,7 @@ html, body {
   padding: 0.7rem 0.95rem 0.7rem 2.6rem;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--bg-card);
+  background: transparent;
   color: var(--text-primary);
   font-size: 0.95rem;
   box-sizing: border-box;
@@ -1183,7 +1183,7 @@ html, body {
 
 .segmented {
   display: inline-flex;
-  background: var(--bg-card);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.25rem;
@@ -1232,7 +1232,7 @@ html, body {
 
 .media-card {
   position: relative;
-  background: var(--bg-card);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.1rem;
@@ -1405,9 +1405,9 @@ html, body {
   border-radius: 6px;
   font-weight: 800;
   letter-spacing: 0.05em;
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  background-color: transparent;
+  border: none;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .link-badge {
@@ -1420,7 +1420,6 @@ html, body {
 
 .link-badge:hover {
   color: var(--accent-hover);
-  border-color: var(--accent);
 }
 
 .type-badge.show {
@@ -1457,8 +1456,8 @@ html, body {
   flex-shrink: 0;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
 }
 
 .poster-img {
@@ -1471,7 +1470,7 @@ html, body {
 .poster-placeholder {
   width: 100%;
   height: 100%;
-  border: 1px dashed var(--border);
+  border: none;
   box-sizing: border-box;
   border-radius: 8px;
   display: flex;
@@ -1527,7 +1526,6 @@ html, body {
 
 .notify-badge.is-off:hover {
   color: var(--text-secondary);
-  border-color: var(--text-muted);
 }
 
 .notify-badge:disabled {
@@ -1537,7 +1535,6 @@ html, body {
 
 .notify-badge:disabled:hover {
   color: var(--text-muted);
-  border-color: var(--border);
 }
 
 .card-title {
@@ -1634,8 +1631,9 @@ html, body {
   align-items: center;
   justify-content: flex-end;
   gap: 0.2rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.2rem 0.45rem;
   transition: border-color 0.12s ease;
@@ -1710,8 +1708,8 @@ html, body {
 }
 
 .stepper-btn {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   color: var(--accent);
   padding: 0.25rem 0.55rem;
   border-radius: 5px;
@@ -1736,10 +1734,10 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--bg-input);
-  padding: 0.45rem 0.75rem;
+  background: transparent;
+  padding: 0.45rem 0;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .select {
@@ -1758,7 +1756,7 @@ html, body {
 }
 
 .selected {
-  background-color: var(--bg-card);
+  background-color: transparent;
   border: 1px solid var(--border);
   padding: 0.3rem 0.6rem;
   border-radius: 6px;
@@ -1834,7 +1832,7 @@ html, body {
   text-align: center;
   padding: 4.5rem 2rem;
   background: var(--bg-card);
-  border: 1px dashed var(--border);
+  border: none;
   border-radius: 12px;
 }
 

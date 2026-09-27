@@ -894,7 +894,7 @@ body::-webkit-scrollbar {
   gap: 0.5rem;
   padding: 0.75rem 0.85rem;
   background: var(--bg-card);
-  border-bottom: 3px double var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .brand {
@@ -957,16 +957,16 @@ body::-webkit-scrollbar {
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   cursor: pointer;
   padding: 0;
-  transition: border-color 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 .icon-btn:hover {
-  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .content {
@@ -993,8 +993,8 @@ body::-webkit-scrollbar {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 12px;
   padding: 1rem 1.1rem;
   box-shadow: 0 2px 6px var(--shadow);
@@ -1002,7 +1002,7 @@ body::-webkit-scrollbar {
 }
 
 .count-card:hover {
-  border-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .count-display {
@@ -1046,7 +1046,7 @@ body::-webkit-scrollbar {
 .primary-btn {
   background-color: var(--accent);
   color: var(--accent-contrast);
-  border: 1px solid var(--accent);
+  border: none;
 }
 
 .primary-btn:hover {
@@ -1055,23 +1055,22 @@ body::-webkit-scrollbar {
 }
 
 .secondary-btn {
-  background-color: var(--bg-input);
+  background-color: transparent;
   color: var(--text-secondary);
-  border: 1px solid var(--border);
+  border: none;
 }
 
 .secondary-btn:hover {
-  background-color: var(--bg-card);
+  background-color: transparent;
   color: var(--text-primary);
-  border-color: var(--text-muted);
 }
 
 /* ---------- Add-media View ---------- */
 .add-panel {
   width: 100%;
   text-align: left;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 12px;
   padding: 0.55rem 0.7rem 0.6rem;
   box-shadow: 0 2px 8px var(--shadow);
@@ -1102,7 +1101,7 @@ body::-webkit-scrollbar {
   gap: 0.3rem;
   background: var(--accent-soft);
   color: var(--accent);
-  border: 1px solid var(--accent);
+  border: none;
   padding: 0.28rem 0.5rem;
   border-radius: 8px;
   font-size: 0.68rem;
@@ -1133,8 +1132,9 @@ body::-webkit-scrollbar {
 .form-group input {
   padding: 0.32rem 0.55rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
   color: var(--text-primary);
   font-size: 0.78rem;
   font-family: inherit;
@@ -1212,7 +1212,7 @@ body::-webkit-scrollbar {
   width: 22px;
   height: 32px;
   background: var(--bg-input);
-  border: 1px dashed var(--border);
+  border: none;
   border-radius: 4px;
   flex-shrink: 0;
 }
@@ -1247,8 +1247,8 @@ body::-webkit-scrollbar {
   letter-spacing: 0.05em;
   padding: 0.15rem 0.4rem;
   border-radius: 6px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
 }
 
 .suggestion-meta .badge.show {
@@ -1282,8 +1282,9 @@ body::-webkit-scrollbar {
 }
 
 .selected {
-  background-color: var(--bg-input);
-  border: 1px solid var(--border);
+  background-color: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
   padding: 0.32rem 0.55rem;
   border-radius: 8px;
   font-size: 0.78rem;
@@ -1384,8 +1385,8 @@ body::-webkit-scrollbar {
 .segmented {
   display: flex;
   width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: 8px;
   padding: 0.18rem;
   gap: 0.18rem;
