@@ -631,7 +631,7 @@ const handleAddMediaSubmit = async () => {
         </div>
 
         <div class="form-group">
-          <label for="url-input">Watching URL (Optional)</label>
+          <label for="url-input">Watching URL</label>
           <input
             id="url-input"
             v-model="formUrl"
@@ -719,7 +719,7 @@ const handleAddMediaSubmit = async () => {
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="total-seasons-input">Total Seasons (optional)</label>
+                <label for="total-seasons-input">Total Seasons</label>
                 <input
                   id="total-seasons-input"
                   v-model="formTotalSeasons"
@@ -735,7 +735,7 @@ const handleAddMediaSubmit = async () => {
                 />
               </div>
               <div class="form-group">
-                <label for="total-episodes-input">Released Episodes (optional)</label>
+                <label for="total-episodes-input">Released Episodes</label>
                 <input
                   id="total-episodes-input"
                   v-model="formTotalEpisodes"
@@ -773,7 +773,7 @@ const handleAddMediaSubmit = async () => {
                 />
               </div>
               <div class="form-group">
-                <label for="runtime-minutes-input">Runtime (optional)</label>
+                <label for="runtime-minutes-input">Runtime</label>
                 <input
                   id="runtime-minutes-input"
                   v-model="formRuntimeMinutes"
@@ -793,7 +793,7 @@ const handleAddMediaSubmit = async () => {
               </div>
             </div>
             <div class="form-group">
-              <label for="release-year-input">Release Year (optional)</label>
+              <label for="release-year-input">Release Year</label>
               <input
                 id="release-year-input"
                 v-model="formReleaseYear"
@@ -1112,8 +1112,8 @@ body::-webkit-scrollbar {
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.18rem;
-  margin-bottom: 0.38rem;
+  gap: 0.28rem;
+  margin-bottom: 0.85rem;
 }
 
 .dropdown-group {
@@ -1134,7 +1134,7 @@ body::-webkit-scrollbar {
   border-radius: 8px;
   border: none;
   border-bottom: 1px solid var(--border);
-  background: transparent;
+  background: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
   color: var(--text-primary);
   font-size: 0.78rem;
   font-family: inherit;
@@ -1282,7 +1282,7 @@ body::-webkit-scrollbar {
 }
 
 .selected {
-  background-color: transparent;
+  background-color: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
   border: none;
   border-bottom: 1px solid var(--border);
   padding: 0.32rem 0.55rem;
@@ -1359,7 +1359,7 @@ body::-webkit-scrollbar {
 .form-row {
   display: flex;
   gap: 0.45rem;
-  margin-bottom: 0.38rem;
+  margin-bottom: 0.85rem;
 }
 
 .form-row .form-group {
@@ -1368,8 +1368,8 @@ body::-webkit-scrollbar {
 }
 
 .field-section {
-  padding-top: 0.38rem;
-  margin-top: 0.05rem;
+  padding-top: 0.7rem;
+  margin-top: 0.15rem;
   border-top: 1px solid var(--border);
 }
 
@@ -1385,7 +1385,7 @@ body::-webkit-scrollbar {
 .segmented {
   display: flex;
   width: 100%;
-  background: transparent;
+  background: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
   border: none;
   border-radius: 8px;
   padding: 0.18rem;
