@@ -1,45 +1,49 @@
-/* Dark mode is #011502. #01200F is the light-mode ink. The rest is dusty sage. */
+/* KDM-style: black field, warm-grey ink, hairline borders. */
 :root,
 :root.theme-dark {
   color-scheme: dark;
-  --bg: #011502;
-  --bg-card: #011502;
-  --bg-input: #011502;
-  --border: #5c7d66;
-  --text-primary: #d0ddd0;
-  --text-secondary: #8eaa93;
-  --text-muted: #7d9a84;
-  --accent: #8faf93;
-  --accent-hover: #a8c4ab;
-  --accent-contrast: #011502;
-  --accent-soft: rgba(143, 175, 147, 0.24);
-  --danger: #c4928c;
-  --error-bg: #2a1c1b;
-  --error-text: #e0b5ae;
-  --shadow: rgba(1, 21, 2, 0.55);
-  --show-text: #a3bba6;
-  --movie-text: #8eb8b0;
+  --bg: #000;
+  --bg-card: #000;
+  --bg-input: #141311;
+  --ink: #e6e2da;
+  --border: color-mix(in srgb, var(--ink) 14%, transparent);
+  --text-primary: var(--ink);
+  --text-secondary: color-mix(in srgb, var(--ink) 70%, transparent);
+  --text-muted: color-mix(in srgb, var(--ink) 45%, transparent);
+  --accent: var(--ink);
+  --accent-hover: #cfcabf;
+  --accent-contrast: #000;
+  --accent-soft: color-mix(in srgb, var(--ink) 10%, transparent);
+  --danger: var(--ink);
+  --error-bg: #141311;
+  --error-text: var(--ink);
+  --shadow: transparent;
+  --show-text: color-mix(in srgb, var(--ink) 55%, transparent);
+  --movie-text: color-mix(in srgb, var(--ink) 55%, transparent);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 :root.theme-light {
   color-scheme: light;
-  --bg: #e7f0e4;
-  --bg-card: #f4f8f3;
-  --bg-input: #dce8d8;
-  --border: #3d5a46;
-  --text-primary: #011502;
-  --text-secondary: #01200F;
-  --text-muted: #3d5a46;
-  --accent: #01200F;
-  --accent-hover: #011502;
-  --accent-contrast: #e7f0e4;
-  --accent-soft: rgba(1, 32, 15, 0.14);
-  --danger: #7a4540;
-  --error-bg: #f3e4e1;
-  --error-text: #6e3e3a;
-  --shadow: rgba(1, 21, 2, 0.12);
-  --show-text: #01200F;
-  --movie-text: #24564f;
+  --bg: #f3f0ea;
+  --bg-card: #f3f0ea;
+  --bg-input: #e7e3db;
+  --ink: #1c1b19;
+  --border: color-mix(in srgb, var(--ink) 14%, transparent);
+  --text-primary: var(--ink);
+  --text-secondary: color-mix(in srgb, var(--ink) 70%, transparent);
+  --text-muted: color-mix(in srgb, var(--ink) 45%, transparent);
+  --accent: var(--ink);
+  --accent-hover: #3a3834;
+  --accent-contrast: #e6e2da;
+  --accent-soft: color-mix(in srgb, var(--ink) 8%, transparent);
+  --danger: var(--ink);
+  --error-bg: #e7e3db;
+  --error-text: var(--ink);
+  --shadow: transparent;
+  --show-text: rgba(0, 0, 0, 0.55);
+  --movie-text: rgba(0, 0, 0, 0.55);
 }
 
 html,
@@ -48,15 +52,21 @@ button,
 input,
 textarea,
 select {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--font-sans);
 }
 
-:root.theme-dark body {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.16) 0 1px,
-    transparent 1px 4px
-  );
+h1,
+.type-badge,
+.link-badge,
+.stat-label,
+.count-label,
+.progress-label,
+.status-label,
+.section-label,
+.form-group label,
+.notif-time,
+.footer-link {
+  font-family: var(--font-mono);
 }
 
 ::selection {
@@ -70,5 +80,19 @@ select {
 *::after {
   border-radius: 0 !important;
   box-shadow: none !important;
+  text-transform: lowercase !important;
 }
 
+.card-title,
+.card-title-link,
+.title-track,
+.notif-title,
+.suggestion-title,
+.modal-subtitle,
+#title-input {
+  text-transform: none !important;
+}
+
+#title-input::placeholder {
+  text-transform: lowercase !important;
+}

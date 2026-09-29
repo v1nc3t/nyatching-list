@@ -341,8 +341,8 @@ const handleSave = async () => {
 
 .secondary-btn {
   background-color: transparent;
-  color: var(--text-secondary);
-  border: none;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
 .secondary-btn:hover {

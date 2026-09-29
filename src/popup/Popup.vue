@@ -848,7 +848,6 @@ body {
   scrollbar-width: none;
   background-color: var(--bg);
   color: var(--text-primary);
-  font-family: 'Courier New', Courier, monospace;
   font-size: 16px;
 }
 
@@ -879,7 +878,6 @@ body::-webkit-scrollbar {
   padding: 0;
   background-color: var(--bg);
   color: var(--text-primary);
-  font-family: 'Courier New', Courier, monospace;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
@@ -929,10 +927,11 @@ body::-webkit-scrollbar {
 
 .brand h1 {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   line-height: 1.1;
   transition: color 0.15s ease;
 }
@@ -1056,8 +1055,8 @@ body::-webkit-scrollbar {
 
 .secondary-btn {
   background-color: transparent;
-  color: var(--text-secondary);
-  border: none;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
 .secondary-btn:hover {

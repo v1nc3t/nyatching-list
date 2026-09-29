@@ -811,7 +811,6 @@ html, body {
   padding: 0;
   background-color: var(--bg);
   color: var(--text-primary);
-  font-family: 'Courier New', Courier, monospace;
   font-size: 16px;
 }
 </style>
@@ -858,10 +857,11 @@ html, body {
 
 .brand h1 {
   margin: 0;
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
   letter-spacing: 0.14em;
+  text-transform: uppercase;
   line-height: 1.1;
 }
 
@@ -1104,11 +1104,11 @@ html, body {
 .stat-card {
   background: transparent;
   border: none;
-  border-radius: 12px;
-  padding: 1.15rem 1.35rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0.85rem 0;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 2px 6px var(--shadow);
 }
 
 .stat-card.accent {
@@ -1246,7 +1246,6 @@ html, body {
 
 .media-card:hover,
 .media-card.is-select-open {
-  transform: translateY(-2px);
   border-color: var(--accent);
   z-index: 10;
 }

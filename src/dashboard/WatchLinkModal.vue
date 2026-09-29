@@ -100,7 +100,7 @@ const handleSave = async () => {
   margin: 0;
   font-size: 1.15rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 .close-btn {
@@ -209,8 +209,8 @@ const handleSave = async () => {
 
 .secondary-btn {
   background-color: transparent;
-  color: var(--text-secondary);
-  border: none;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
 .secondary-btn:hover {
