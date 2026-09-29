@@ -372,7 +372,7 @@ const setStatus = (status: MediaStatus) => {
   }
 }
 
-const formatStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const formatStatus = (s: string) => (s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1))
 
 const handleNumberWheel = (
   event: WheelEvent,
@@ -658,16 +658,18 @@ const handleAddMediaSubmit = async () => {
             </div>
             <div class="options">
               <label
-                v-for="st in (['watching', 'waiting', 'completed', 'dropped'] as MediaStatus[])"
+                v-for="st in (['watching', 'waiting', 'next', 'completed', 'dropped'] as MediaStatus[])"
                 :key="st"
                 class="option-item"
                 :class="{ active: formStatus === st }"
                 :title="
                   st === 'waiting'
                     ? 'Waiting: notify when a new episode or season is out'
-                    : st === 'watching'
-                      ? 'Watching: remind you to update progress'
-                      : undefined
+                    : st === 'next'
+                      ? 'Next up: one alert when episodes start airing'
+                      : st === 'watching'
+                        ? 'Watching: remind you to update progress'
+                        : undefined
                 "
                 @click="setStatus(st)"
               >

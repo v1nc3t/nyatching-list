@@ -36,7 +36,7 @@ const settingFields = computed(() => [
   {
     key: 'episode' as const,
     label: 'New episodes',
-    hint: 'Waiting shows. Up to 2 a day.',
+    hint: 'Waiting and next up shows. Up to 2 a day.',
     value: settings.value.newSeasonCheckIntervalHours,
   },
   {

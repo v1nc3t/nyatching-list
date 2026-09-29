@@ -50,8 +50,9 @@ const viewMode = ref<'tile' | 'list'>('tile')
 const STATUS_RANK: Record<MediaStatus, number> = {
   watching: 0,
   waiting: 1,
-  completed: 2,
-  dropped: 3,
+  next: 2,
+  completed: 3,
+  dropped: 4,
 }
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
@@ -236,7 +237,7 @@ const handleNotifyToggle = async (item: TrackedMedia) => {
 }
 
 const notifyLocked = (item: TrackedMedia) =>
-  item.status !== 'watching' && !(isShow(item) && item.status === 'waiting')
+  item.status !== 'watching' && !(isShow(item) && (item.status === 'waiting' || item.status === 'next'))
 
 const notifyTitle = (item: TrackedMedia): string => {
   if (notifyLocked(item)) return 'Notifications are off for completed and dropped titles'
@@ -338,7 +339,8 @@ const handleDelete = async (id: string) => {
   }
 }
 
-const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).toUpperCase() + s.slice(1))
+const formatStatus = (s: string) =>
+  s === 'all' ? 'All Statuses' : s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1)
 
 const startTitleMarquee = (event: Event) => {
   const marquee = event.currentTarget as HTMLElement
@@ -572,7 +574,7 @@ const stopTitleMarquee = (event: Event) => {
             </div>
             <div class="options">
               <label
-                v-for="st in (['all', 'watching', 'waiting', 'completed', 'dropped'] as (MediaStatus | 'all')[])"
+                v-for="st in (['all', 'watching', 'waiting', 'next', 'completed', 'dropped'] as (MediaStatus | 'all')[])"
                 :key="st"
                 class="option-item"
                 :class="{ active: statusFilter === st }"
@@ -769,16 +771,18 @@ const stopTitleMarquee = (event: Event) => {
                 </div>
                 <div class="options">
                   <label
-                    v-for="st in (['watching', 'waiting', 'completed', 'dropped'] as MediaStatus[])"
+                    v-for="st in (['watching', 'waiting', 'next', 'completed', 'dropped'] as MediaStatus[])"
                     :key="st"
                     class="option-item"
                     :class="{ active: item.status === st }"
                     :title="
                       st === 'waiting'
                         ? 'Waiting: notify when a new episode or season is out'
-                        : st === 'watching'
-                          ? 'Watching: remind you to update progress'
-                          : undefined
+                        : st === 'next'
+                          ? 'Next up: one alert when episodes start airing'
+                          : st === 'watching'
+                            ? 'Watching: remind you to update progress'
+                            : undefined
                     "
                     @click="handleStatusChange(item, st)"
                   >
