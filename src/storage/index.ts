@@ -13,7 +13,7 @@ import {
 const STORAGE_KEY = 'nyatching_list_media' as const;
 const NOTIFICATIONS_STORAGE_KEY = 'nyatching_notification_log' as const;
 const SETTINGS_STORAGE_KEY = 'nyatching_settings' as const;
-const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'dropped'];
+const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'next', 'completed', 'dropped'];
 const ACTIVITY_KEYS = ['status', 'currentSeason', 'currentEpisode', 'currentMinutes'] as const;
 
 function resolveActivityAt(

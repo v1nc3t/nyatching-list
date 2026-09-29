@@ -1,4 +1,4 @@
-export type MediaStatus = 'watching' | 'waiting' | 'completed' | 'dropped';
+export type MediaStatus = 'watching' | 'waiting' | 'next' | 'completed' | 'dropped';
 
 export interface AppSettings {
   newSeasonCheckIntervalHours: number // -1 means Never
@@ -34,6 +34,8 @@ export interface Show extends BaseMedia {
   totalEpisodes?: number;
   lastNotifiedSeason?: number;
   lastNotifiedEpisode?: number;
+  /** Next up only. True after a check saw no aired episodes. False if it was already airing. */
+  awaitingRelease?: boolean;
   /** When the last new-episode alert for this show was sent. */
   lastReleaseNotifiedAt?: number;
 }
