@@ -8,7 +8,13 @@ import {
   getTMDBSeasonEpisodes,
   TMDBTvDetails,
 } from '../services/tmdb'
-import { decideReleaseAction, isNotifiableShow, buildShowMetaUpdates, ReleaseNotice } from './release-check'
+import {
+  decideNextUpRelease,
+  decideReleaseAction,
+  isNotifiableShow,
+  buildShowMetaUpdates,
+  ReleaseNotice,
+} from './release-check'
 import {
   buildReminderNotice,
   isReminderDue,
@@ -119,12 +125,11 @@ const processShowRelease = async (show: Show): Promise<PendingRelease | null> =>
       latest,
       tmdbData
     )
-    const decision = decideReleaseAction(
-      show,
-      latest,
-      buildShowMetaUpdates(totalSeasons, totalEpisodes),
-      seasonEpisodeCount
-    )
+    const totals = buildShowMetaUpdates(totalSeasons, totalEpisodes)
+    const decision =
+      show.status === 'next'
+        ? decideNextUpRelease(show, latest, totals)
+        : decideReleaseAction(show, latest, totals, seasonEpisodeCount)
 
     const { lastNotifiedSeason, lastNotifiedEpisode, ...meta } = decision.updates
     if (Object.keys(meta).length > 0) {
