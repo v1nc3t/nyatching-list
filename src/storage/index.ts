@@ -13,7 +13,7 @@ import {
 const STORAGE_KEY = 'nyatching_list_media' as const;
 const NOTIFICATIONS_STORAGE_KEY = 'nyatching_notification_log' as const;
 const SETTINGS_STORAGE_KEY = 'nyatching_settings' as const;
-const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'completed', 'dropped'];
+const VALID_STATUSES: MediaStatus[] = ['watching', 'waiting', 'next', 'completed', 'dropped'];
 const ACTIVITY_KEYS = ['status', 'currentSeason', 'currentEpisode', 'currentMinutes'] as const;
 
 function resolveActivityAt(
@@ -183,11 +183,16 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
   let newItem: TrackedMedia;
 
   if (input.mediaType === 'show') {
+    const season = status === 'next' ? 0 : input.currentSeason ?? 1;
+    const episode = status === 'next' ? 0 : input.currentEpisode ?? 1;
+    if (status !== 'next' && (!Number.isInteger(season) || season < 1 || !Number.isInteger(episode) || episode < 1)) {
+      throw new Error('[Nyatching List] Season and episode must be integers >= 1.');
+    }
     newItem = {
       ...baseData,
       mediaType: 'show',
-      currentSeason: input.currentSeason ?? 1,
-      currentEpisode: input.currentEpisode ?? 1,
+      currentSeason: season,
+      currentEpisode: episode,
       totalSeasons: input.totalSeasons,
       totalEpisodes: input.totalEpisodes,
       notify: true,
@@ -196,7 +201,7 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     newItem = {
       ...baseData,
       mediaType: 'movie',
-      currentMinutes: input.currentMinutes ?? 0,
+      currentMinutes: status === 'next' ? 0 : input.currentMinutes ?? 0,
       runtimeMinutes: input.runtimeMinutes,
       releaseYear: input.releaseYear,
     };
@@ -231,14 +236,21 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
 
   if (isShow(existingItem)) {
     const showUpdates = updates as Partial<Show>;
-    const season = showUpdates.currentSeason ?? existingItem.currentSeason;
-    const episode = showUpdates.currentEpisode ?? existingItem.currentEpisode;
-
-    if (showUpdates.currentSeason !== undefined && (!Number.isInteger(season) || season < 1)) {
-      throw new Error('[Nyatching List] Season must be an integer >= 1.');
+    const nextStatus = showUpdates.status ?? existingItem.status;
+    let season = showUpdates.currentSeason ?? existingItem.currentSeason;
+    let episode = showUpdates.currentEpisode ?? existingItem.currentEpisode;
+    if (nextStatus === 'next') {
+      season = 0;
+      episode = 0;
     }
-    if (showUpdates.currentEpisode !== undefined && (!Number.isInteger(episode) || episode < 1)) {
-      throw new Error('[Nyatching List] Episode must be an integer >= 1.');
+
+    if (nextStatus !== 'next') {
+      if (showUpdates.currentSeason !== undefined && (!Number.isInteger(season) || season < 1)) {
+        throw new Error('[Nyatching List] Season must be an integer >= 1.');
+      }
+      if (showUpdates.currentEpisode !== undefined && (!Number.isInteger(episode) || episode < 1)) {
+        throw new Error('[Nyatching List] Episode must be an integer >= 1.');
+      }
     }
 
     const updatedShow: Show = {
@@ -256,7 +268,9 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
 
   if (isMovie(existingItem)) {
     const movieUpdates = updates as Partial<Movie>;
-    const minutes = movieUpdates.currentMinutes ?? existingItem.currentMinutes;
+    const nextStatus = movieUpdates.status ?? existingItem.status;
+    let minutes = movieUpdates.currentMinutes ?? existingItem.currentMinutes;
+    if (nextStatus === 'next') minutes = 0;
 
     if (movieUpdates.currentMinutes !== undefined && (!Number.isInteger(minutes) || minutes < 0)) {
       throw new Error('[Nyatching List] Current minutes must be a non-negative integer.');

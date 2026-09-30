@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import browser from 'webextension-polyfill'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
@@ -58,6 +58,8 @@ const tmdbShowInfo = ref<TMDBShowInfo | null>(null)
 // TMDB Auto-complete State
 const suggestions = ref<TMDBSuggestion[]>([])
 const showSuggestions = ref(false)
+const activeSuggestion = ref(0)
+const suggestionsEl = ref<HTMLElement | null>(null)
 const isSelectingSuggestion = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout>
 
@@ -167,8 +169,13 @@ const applyShowProgressFromTmdb = () => {
     return
   }
 
-  formSeason.value = 1
-  formEpisode.value = 1
+  if (formStatus.value === 'next') {
+    formSeason.value = 0
+    formEpisode.value = 0
+  } else {
+    formSeason.value = 1
+    formEpisode.value = 1
+  }
   const seasonOneAired = getAiredEpisodeCountForSeason(info, 1)
   formTotalEpisodes.value = seasonOneAired ? seasonOneAired.toString() : ''
 }
@@ -190,7 +197,8 @@ watch(formSeason, (newSeason) => {
     }
   }
   if (newSeason < 1) {
-    formSeason.value = 1
+    if (formStatus.value !== 'next') formSeason.value = 1
+    else if (newSeason < 0) formSeason.value = 0
     return
   }
 
@@ -202,6 +210,14 @@ watch(formSeason, (newSeason) => {
       formEpisode.value = airedCount
     }
   }
+})
+
+watch(formEpisode, (episode) => {
+  if (formStatus.value === 'next') {
+    if (episode < 0) formEpisode.value = 0
+    return
+  }
+  if (episode < 1) formEpisode.value = 1
 })
 
 watch(formTotalEpisodes, () => {
@@ -217,6 +233,15 @@ watch(formType, () => {
   }
 })
 
+watch([formSeason, formEpisode, formMinutes], () => {
+  if (formStatus.value !== 'next') return
+  const started =
+    formType.value === 'show' ? formSeason.value > 0 || formEpisode.value > 0 : formMinutes.value > 0
+  if (!started) return
+  formStatus.value = 'watching'
+  if (formType.value === 'show' && formSeason.value < 1) formSeason.value = 1
+})
+
 const clearTmdbDetails = () => {
   selectedPosterPath.value = undefined
   selectedTmdbId.value = undefined
@@ -226,8 +251,8 @@ const clearTmdbDetails = () => {
   formTotalEpisodes.value = ''
   formRuntimeMinutes.value = ''
   formReleaseYear.value = ''
-  formSeason.value = 1
-  formEpisode.value = 1
+  formSeason.value = formStatus.value === 'next' ? 0 : 1
+  formEpisode.value = formStatus.value === 'next' ? 0 : 1
   formMinutes.value = 0
 }
 
@@ -271,9 +296,32 @@ watch(formTitle, (newVal) => {
 
   debounceTimer = setTimeout(async () => {
     suggestions.value = await searchTMDB(newVal)
+    activeSuggestion.value = 0
     showSuggestions.value = suggestions.value.length > 0
   }, 300)
 })
+
+const moveSuggestion = (delta: number) => {
+  const count = suggestions.value.length
+  if (!count) return
+  activeSuggestion.value = (activeSuggestion.value + delta + count) % count
+  suggestionsEl.value?.children[activeSuggestion.value]?.scrollIntoView({ block: 'nearest' })
+}
+
+const onTitleKeydown = (event: KeyboardEvent) => {
+  if (!showSuggestions.value || !suggestions.value.length) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveSuggestion(1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveSuggestion(-1)
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    const item = suggestions.value[activeSuggestion.value]
+    if (item) selectSuggestion(item)
+  }
+}
 
 const selectSuggestion = async (item: TMDBSuggestion) => {
   isSelectingSuggestion.value = true
@@ -369,10 +417,21 @@ const setStatus = (status: MediaStatus) => {
   isStatusOpen.value = false
   if (status === 'completed') {
     applyCompletedProgress()
+    return
   }
+  if (status === 'next') {
+    void nextTick(() => {
+      formSeason.value = 0
+      formEpisode.value = 0
+      formMinutes.value = 0
+    })
+    return
+  }
+  if (formSeason.value < 1) formSeason.value = 1
+  if (formEpisode.value < 1) formEpisode.value = 1
 }
 
-const formatStatus = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const formatStatus = (s: string) => (s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1))
 
 const handleNumberWheel = (
   event: WheelEvent,
@@ -579,14 +638,17 @@ const handleAddMediaSubmit = async () => {
             required
             @focus="showSuggestions = suggestions.length > 0"
             @blur="handleBlur"
+            @keydown="onTitleKeydown"
           />
 
           <!-- Auto-complete Suggestions Dropdown -->
-          <div v-if="showSuggestions" class="suggestions-dropdown">
+          <div v-if="showSuggestions" ref="suggestionsEl" class="suggestions-dropdown">
             <div
-              v-for="item in suggestions"
+              v-for="(item, index) in suggestions"
               :key="item.id"
               class="suggestion-item"
+              :class="{ 'is-active': index === activeSuggestion }"
+              @mouseenter="activeSuggestion = index"
               @click="selectSuggestion(item)"
             >
               <img
@@ -658,16 +720,18 @@ const handleAddMediaSubmit = async () => {
             </div>
             <div class="options">
               <label
-                v-for="st in (['watching', 'waiting', 'completed', 'dropped'] as MediaStatus[])"
+                v-for="st in (['watching', 'waiting', 'next', 'completed', 'dropped'] as MediaStatus[])"
                 :key="st"
                 class="option-item"
                 :class="{ active: formStatus === st }"
                 :title="
                   st === 'waiting'
                     ? 'Waiting: notify when a new episode or season is out'
-                    : st === 'watching'
-                      ? 'Watching: remind you to update progress'
-                      : undefined
+                    : st === 'next'
+                      ? 'Next up: one alert when episodes start airing'
+                      : st === 'watching'
+                        ? 'Watching: remind you to update progress'
+                        : undefined
                 "
                 @click="setStatus(st)"
               >
@@ -688,12 +752,12 @@ const handleAddMediaSubmit = async () => {
                   id="season-input"
                   v-model.number="formSeason"
                   type="number"
-                  min="1"
+                  :min="formStatus === 'next' ? 0 : 1"
                   :max="formTotalSeasons ? Number(formTotalSeasons) : undefined"
                   title="Focus, then scroll to adjust"
                   @wheel.prevent="
                     handleNumberWheel($event, formSeason, (n) => (formSeason = n), {
-                      min: 1,
+                      min: formStatus === 'next' ? 0 : 1,
                       max: formTotalSeasons ? Number(formTotalSeasons) : undefined,
                     })
                   "
@@ -705,12 +769,12 @@ const handleAddMediaSubmit = async () => {
                   id="episode-input"
                   v-model.number="formEpisode"
                   type="number"
-                  min="1"
+                  :min="formStatus === 'next' ? 0 : 1"
                   :max="formTotalEpisodes ? Number(formTotalEpisodes) : undefined"
                   title="Focus, then scroll to adjust"
                   @wheel.prevent="
                     handleNumberWheel($event, formEpisode, (n) => (formEpisode = n), {
-                      min: 1,
+                      min: formStatus === 'next' ? 0 : 1,
                       max: formTotalEpisodes ? Number(formTotalEpisodes) : undefined,
                     })
                   "
@@ -1195,7 +1259,8 @@ body::-webkit-scrollbar {
   transition: background-color 0.12s ease;
 }
 
-.suggestion-item:hover {
+.suggestion-item:hover,
+.suggestion-item.is-active {
   background-color: var(--bg-input);
 }
 

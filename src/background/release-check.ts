@@ -24,7 +24,7 @@ export interface ReleaseCheckResult {
 export const isNotifiableShow = (media: TrackedMedia): media is Show =>
   isShow(media) &&
   isNotifyEnabled(media) &&
-  media.status === 'waiting' &&
+  (media.status === 'waiting' || media.status === 'next') &&
   Boolean(media.tmdbId)
 
 export const notifyAtOnDate = (now: number = Date.now()): number => {
@@ -175,6 +175,32 @@ export const decideReleaseAction = (
   }
 }
 
+/** One alert when a next-up show goes from nothing aired to something aired. */
+export const decideNextUpRelease = (
+  show: Show,
+  latest: TMDBAiredEpisode | null,
+  metaUpdates: Partial<Show>
+): ReleaseCheckResult => {
+  if (show.lastReleaseNotifiedAt || show.awaitingRelease === false) {
+    return { notify: false, notice: null, updates: metaUpdates }
+  }
+  if (!latest) {
+    return { notify: false, notice: null, updates: { ...metaUpdates, awaitingRelease: true } }
+  }
+  if (show.awaitingRelease !== true) {
+    return { notify: false, notice: null, updates: { ...metaUpdates, awaitingRelease: false } }
+  }
+  return {
+    notify: true,
+    notice: buildReleaseNotice(show, latest),
+    updates: {
+      ...metaUpdates,
+      lastNotifiedSeason: latest.season,
+      lastNotifiedEpisode: latest.episode,
+    },
+  }
+}
+
 export const selfCheckReleaseSchedule = (): void => {
   const at = (day: number, hour: number, minute = 0) =>
     new Date(2026, 8, day, hour, minute, 0, 0).getTime()
@@ -192,4 +218,33 @@ export const selfCheckReleaseSchedule = (): void => {
     throw new Error('weekly alarm stays on the due noon')
   }
   if (computeNextAlarmWhen(24, last, last) !== at(15, 12, 0)) throw new Error('daily alarm is next noon')
+
+  const blankNext = (over: Partial<Show> = {}): Show => ({
+    id: 'n',
+    title: 'Show',
+    mediaType: 'show',
+    status: 'next',
+    watchingUrl: '',
+    createdAt: 0,
+    updatedAt: 0,
+    currentSeason: 1,
+    currentEpisode: 1,
+    ...over,
+  })
+  const waiting = decideNextUpRelease(blankNext(), null, {})
+  if (waiting.notify || waiting.updates.awaitingRelease !== true) throw new Error('unreleased next up waits')
+  const burst = decideNextUpRelease(blankNext({ awaitingRelease: true }), { season: 1, episode: 3 }, {})
+  if (!burst.notify || !burst.notice?.message.includes('Episode 3')) {
+    throw new Error('one notice names the latest episode')
+  }
+  const again = decideNextUpRelease(
+    blankNext({ awaitingRelease: true, lastReleaseNotifiedAt: 1 }),
+    { season: 1, episode: 4 },
+    {}
+  )
+  if (again.notify) throw new Error('next up notifies once')
+  const aired = decideNextUpRelease(blankNext(), { season: 1, episode: 1 }, {})
+  if (aired.notify || aired.updates.awaitingRelease !== false) throw new Error('already airing next up stays quiet')
 }
+
+selfCheckReleaseSchedule()

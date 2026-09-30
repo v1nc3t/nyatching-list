@@ -50,8 +50,9 @@ const viewMode = ref<'tile' | 'list'>('tile')
 const STATUS_RANK: Record<MediaStatus, number> = {
   watching: 0,
   waiting: 1,
-  completed: 2,
-  dropped: 3,
+  next: 2,
+  completed: 3,
+  dropped: 4,
 }
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
@@ -187,21 +188,29 @@ const filteredMedia = computed(() => {
 
 // Handlers for Show
 const handleEpisodeChange = async (show: Show, delta: number) => {
-  let nextEpisode = Math.max(1, show.currentEpisode + delta)
+  const floor = show.status === 'next' ? 0 : 1
+  let nextEpisode = Math.max(floor, show.currentEpisode + delta)
   if (show.totalEpisodes && show.totalEpisodes > 0) {
     nextEpisode = Math.min(nextEpisode, show.totalEpisodes)
   }
 
   let updatedStatus: MediaStatus = show.status
-  if (nextEpisode < show.currentEpisode && show.status === 'completed') {
-    updatedStatus = 'watching'
-  }
+  if (show.status === 'next' && nextEpisode !== show.currentEpisode) updatedStatus = 'watching'
+  else if (nextEpisode < show.currentEpisode && show.status === 'completed') updatedStatus = 'watching'
 
-  await updateMedia({ id: show.id, currentEpisode: nextEpisode, status: updatedStatus })
+  const updates: Partial<Show> & { id: string } = {
+    id: show.id,
+    currentEpisode: nextEpisode,
+    status: updatedStatus,
+  }
+  if (updatedStatus === 'watching' && show.currentSeason < 1 && nextEpisode > 0) updates.currentSeason = 1
+
+  await updateMedia(updates)
 }
 
 const handleSeasonChange = async (show: Show, delta: number) => {
-  let nextSeason = Math.max(1, show.currentSeason + delta)
+  const floor = show.status === 'next' ? 0 : 1
+  let nextSeason = Math.max(floor, show.currentSeason + delta)
 
   if (show.totalSeasons && show.totalSeasons > 0) {
     nextSeason = Math.min(nextSeason, show.totalSeasons)
@@ -223,9 +232,8 @@ const handleSeasonChange = async (show: Show, delta: number) => {
     }
   }
 
-  if (nextSeason < show.currentSeason && show.status === 'completed') {
-    updates.status = 'watching'
-  }
+  if (show.status === 'next' && nextSeason !== show.currentSeason) updates.status = 'watching'
+  else if (nextSeason < show.currentSeason && show.status === 'completed') updates.status = 'watching'
 
   await updateMedia(updates)
 }
@@ -236,7 +244,7 @@ const handleNotifyToggle = async (item: TrackedMedia) => {
 }
 
 const notifyLocked = (item: TrackedMedia) =>
-  item.status !== 'watching' && !(isShow(item) && item.status === 'waiting')
+  item.status !== 'watching' && !(isShow(item) && (item.status === 'waiting' || item.status === 'next'))
 
 const notifyTitle = (item: TrackedMedia): string => {
   if (notifyLocked(item)) return 'Notifications are off for completed and dropped titles'
@@ -254,9 +262,13 @@ const handleMinutesChange = async (movie: Movie, delta: number) => {
     if (nextMinutes >= movie.runtimeMinutes) {
       nextMinutes = movie.runtimeMinutes
       updatedStatus = 'completed'
+    } else if (movie.status === 'next' && nextMinutes !== movie.currentMinutes) {
+      updatedStatus = 'watching'
     } else if (delta < 0 && movie.status === 'completed') {
       updatedStatus = 'watching'
     }
+  } else if (movie.status === 'next' && nextMinutes !== movie.currentMinutes) {
+    updatedStatus = 'watching'
   }
 
   await updateMedia({ id: movie.id, currentMinutes: nextMinutes, status: updatedStatus })
@@ -285,9 +297,13 @@ const handleMinutesInput = async (event: Event, movie: Movie) => {
     if (newMinutes >= movie.runtimeMinutes) {
       newMinutes = movie.runtimeMinutes
       updatedStatus = 'completed'
+    } else if (movie.status === 'next' && newMinutes !== movie.currentMinutes) {
+      updatedStatus = 'watching'
     } else if (movie.status === 'completed') {
       updatedStatus = 'watching'
     }
+  } else if (movie.status === 'next' && newMinutes !== movie.currentMinutes) {
+    updatedStatus = 'watching'
   }
 
   await updateMedia({ id: movie.id, currentMinutes: newMinutes, status: updatedStatus })
@@ -298,7 +314,10 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
   if (isShow(item)) {
     const updates: Partial<Show> & { id: string } = { id: item.id, status: newStatus }
 
-    if (newStatus === 'completed') {
+    if (newStatus === 'next') {
+      updates.currentSeason = 0
+      updates.currentEpisode = 0
+    } else if (newStatus === 'completed') {
       let progress = null
       if (item.tmdbId) {
         const info = await loadShowInfo(item.tmdbId)
@@ -313,6 +332,9 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
         updates.totalSeasons = progress.totalSeasons
         updates.totalEpisodes = progress.totalEpisodes
       }
+    } else if (item.status === 'next') {
+      if (item.currentSeason < 1) updates.currentSeason = 1
+      if (item.currentEpisode < 1) updates.currentEpisode = 1
     }
 
     await updateMedia(updates)
@@ -321,7 +343,9 @@ const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) =>
 
   const updates: Partial<Movie> & { id: string } = { id: item.id, status: newStatus }
 
-  if (newStatus === 'completed') {
+  if (newStatus === 'next') {
+    updates.currentMinutes = 0
+  } else if (newStatus === 'completed') {
     const progress = await resolveCompletedMovieProgress(item.tmdbId, item)
     updates.currentMinutes = progress.currentMinutes
     if (progress.runtimeMinutes) {
@@ -338,7 +362,8 @@ const handleDelete = async (id: string) => {
   }
 }
 
-const formatStatus = (s: string) => (s === 'all' ? 'All Statuses' : s.charAt(0).toUpperCase() + s.slice(1))
+const formatStatus = (s: string) =>
+  s === 'all' ? 'All Statuses' : s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1)
 
 const startTitleMarquee = (event: Event) => {
   const marquee = event.currentTarget as HTMLElement
@@ -572,7 +597,7 @@ const stopTitleMarquee = (event: Event) => {
             </div>
             <div class="options">
               <label
-                v-for="st in (['all', 'watching', 'waiting', 'completed', 'dropped'] as (MediaStatus | 'all')[])"
+                v-for="st in (['all', 'watching', 'waiting', 'next', 'completed', 'dropped'] as (MediaStatus | 'all')[])"
                 :key="st"
                 class="option-item"
                 :class="{ active: statusFilter === st }"
@@ -694,7 +719,7 @@ const stopTitleMarquee = (event: Event) => {
                   </span>
                 </div>
                 <div class="btn-group">
-                  <button class="stepper-btn" :disabled="item.currentSeason <= 1" @click="handleSeasonChange(item, -1)">-</button>
+                  <button class="stepper-btn" :disabled="item.currentSeason <= (item.status === 'next' ? 0 : 1)" @click="handleSeasonChange(item, -1)">-</button>
                   <button 
                     class="stepper-btn" 
                     :disabled="!!item.totalSeasons && item.currentSeason >= item.totalSeasons" 
@@ -712,7 +737,7 @@ const stopTitleMarquee = (event: Event) => {
                   </span>
                 </div>
                 <div class="btn-group">
-                  <button class="stepper-btn" :disabled="item.currentEpisode <= 1" @click="handleEpisodeChange(item, -1)">-</button>
+                  <button class="stepper-btn" :disabled="item.currentEpisode <= (item.status === 'next' ? 0 : 1)" @click="handleEpisodeChange(item, -1)">-</button>
                   <button
                     class="stepper-btn"
                     :disabled="!!item.totalEpisodes && item.currentEpisode >= item.totalEpisodes"
@@ -769,16 +794,18 @@ const stopTitleMarquee = (event: Event) => {
                 </div>
                 <div class="options">
                   <label
-                    v-for="st in (['watching', 'waiting', 'completed', 'dropped'] as MediaStatus[])"
+                    v-for="st in (['watching', 'waiting', 'next', 'completed', 'dropped'] as MediaStatus[])"
                     :key="st"
                     class="option-item"
                     :class="{ active: item.status === st }"
                     :title="
                       st === 'waiting'
                         ? 'Waiting: notify when a new episode or season is out'
-                        : st === 'watching'
-                          ? 'Watching: remind you to update progress'
-                          : undefined
+                        : st === 'next'
+                          ? 'Next up: one alert when episodes start airing'
+                          : st === 'watching'
+                            ? 'Watching: remind you to update progress'
+                            : undefined
                     "
                     @click="handleStatusChange(item, st)"
                   >
