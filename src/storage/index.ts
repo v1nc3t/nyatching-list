@@ -89,7 +89,22 @@ export const saveSettings = async (settings: Partial<AppSettings>): Promise<AppS
 export async function getAllMedia(): Promise<TrackedMedia[]> {
   if (!isStorageAvailable()) return [];
   const data = await browser.storage.local.get(STORAGE_KEY);
-  return (data[STORAGE_KEY] as TrackedMedia[]) ?? [];
+  const list = (data[STORAGE_KEY] as TrackedMedia[]) ?? [];
+  let dirty = false;
+  const normalized = list.map((item) => {
+    if (item.status !== 'next') return item;
+    if (isShow(item) && (item.currentSeason !== 0 || item.currentEpisode !== 0)) {
+      dirty = true;
+      return { ...item, currentSeason: 0, currentEpisode: 0 };
+    }
+    if (isMovie(item) && item.currentMinutes !== 0) {
+      dirty = true;
+      return { ...item, currentMinutes: 0 };
+    }
+    return item;
+  });
+  if (dirty) await setStorageData({ [STORAGE_KEY]: normalized });
+  return normalized;
 }
 
 export async function getMediaById(id: string): Promise<TrackedMedia | undefined> {
@@ -186,8 +201,8 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     newItem = {
       ...baseData,
       mediaType: 'show',
-      currentSeason: input.currentSeason ?? 1,
-      currentEpisode: input.currentEpisode ?? 1,
+      currentSeason: status === 'next' ? 0 : input.currentSeason ?? 1,
+      currentEpisode: status === 'next' ? 0 : input.currentEpisode ?? 1,
       totalSeasons: input.totalSeasons,
       totalEpisodes: input.totalEpisodes,
       notify: true,
@@ -196,7 +211,7 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
     newItem = {
       ...baseData,
       mediaType: 'movie',
-      currentMinutes: input.currentMinutes ?? 0,
+      currentMinutes: status === 'next' ? 0 : input.currentMinutes ?? 0,
       runtimeMinutes: input.runtimeMinutes,
       releaseYear: input.releaseYear,
     };
@@ -231,14 +246,19 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
 
   if (isShow(existingItem)) {
     const showUpdates = updates as Partial<Show>;
-    const season = showUpdates.currentSeason ?? existingItem.currentSeason;
-    const episode = showUpdates.currentEpisode ?? existingItem.currentEpisode;
-
-    if (showUpdates.currentSeason !== undefined && (!Number.isInteger(season) || season < 1)) {
-      throw new Error('[Nyatching List] Season must be an integer >= 1.');
+    const nextStatus = showUpdates.status ?? existingItem.status;
+    let season = showUpdates.currentSeason ?? existingItem.currentSeason;
+    let episode = showUpdates.currentEpisode ?? existingItem.currentEpisode;
+    if (nextStatus === 'next') {
+      season = 0;
+      episode = 0;
     }
-    if (showUpdates.currentEpisode !== undefined && (!Number.isInteger(episode) || episode < 1)) {
-      throw new Error('[Nyatching List] Episode must be an integer >= 1.');
+
+    if (showUpdates.currentSeason !== undefined && (!Number.isInteger(season) || season < 0)) {
+      throw new Error('[Nyatching List] Season must be an integer >= 0.');
+    }
+    if (showUpdates.currentEpisode !== undefined && (!Number.isInteger(episode) || episode < 0)) {
+      throw new Error('[Nyatching List] Episode must be an integer >= 0.');
     }
 
     const updatedShow: Show = {
@@ -256,7 +276,9 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
 
   if (isMovie(existingItem)) {
     const movieUpdates = updates as Partial<Movie>;
-    const minutes = movieUpdates.currentMinutes ?? existingItem.currentMinutes;
+    const nextStatus = movieUpdates.status ?? existingItem.status;
+    let minutes = movieUpdates.currentMinutes ?? existingItem.currentMinutes;
+    if (nextStatus === 'next') minutes = 0;
 
     if (movieUpdates.currentMinutes !== undefined && (!Number.isInteger(minutes) || minutes < 0)) {
       throw new Error('[Nyatching List] Current minutes must be a non-negative integer.');
