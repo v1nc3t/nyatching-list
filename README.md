@@ -9,7 +9,13 @@
 
 A browser extension that helps you keep track of TV shows and movies you are watching.
 
-<img src="./src/assets/nyatching-list-dashboard-dark.png" alt="Dashboard dark" width="100%" />
+<img src="./src/assets/nyatching-list-dashboard-dark.png" alt="Dashboard in dark mode" width="100%" />
+
+<img src="./src/assets/nyatching-list-dashboard-light.png" alt="Dashboard in light mode" width="100%" />
+
+<img src="./src/assets/nyatching-list-popup-dark.png" alt="Add form in dark mode" width="100%" />
+
+<img src="./src/assets/nyatching-list-popup-light.png" alt="Add form in light mode" width="100%" />
 
 ---
 
@@ -26,7 +32,7 @@ Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 
 ## Features
 
-- **Watchlist:** Save shows and movies with a status: watching, waiting, completed, or dropped
+- **Watchlist:** Save shows and movies with a status: watching, waiting, next up, completed, or dropped
 - **Progress tracking:** Track season/episode for shows, and minutes watched for movies
 - **Search:** Find titles with autocomplete powered by [TMDB](https://www.themoviedb.org/)
 - **IMDb quick add:** Open the extension on an IMDb title page to pre-fill the form
@@ -44,7 +50,7 @@ Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 1. Click the Nyatching List icon in your browser toolbar
 2. Open the add form
 3. Search for a title, or type the details yourself
-4. Set the status and starting progress, then save
+4. Set the status and starting progress, then save. Next up starts at 0, and changing that progress switches the title to watching.
 
 If you are already on an IMDb title page, the form can fill itself in for you.
 
@@ -65,7 +71,7 @@ Open the dashboard from the popup to:
 
 ### Notifications
 
-Waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. Watching shows and movies with **Notify** on can send a reminder after they go unchanged for the interval set in settings. At most 2 episode alerts and 2 reminders are sent per day. Click a toast to open your watching link, or the dashboard if none is set. Completed and dropped titles are not notified.
+Waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. A next up show sends one alert when episodes start airing, not one per episode. Watching shows and movies with **Notify** on can send a reminder after they go unchanged for the interval set in settings. At most 2 episode alerts and 2 reminders are sent per day. Click a toast to open your watching link, or the dashboard if none is set. Completed and dropped titles are not notified.
 
 Checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
 
