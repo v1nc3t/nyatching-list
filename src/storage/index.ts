@@ -89,22 +89,7 @@ export const saveSettings = async (settings: Partial<AppSettings>): Promise<AppS
 export async function getAllMedia(): Promise<TrackedMedia[]> {
   if (!isStorageAvailable()) return [];
   const data = await browser.storage.local.get(STORAGE_KEY);
-  const list = (data[STORAGE_KEY] as TrackedMedia[]) ?? [];
-  let dirty = false;
-  const normalized = list.map((item) => {
-    if (item.status !== 'next') return item;
-    if (isShow(item) && (item.currentSeason !== 0 || item.currentEpisode !== 0)) {
-      dirty = true;
-      return { ...item, currentSeason: 0, currentEpisode: 0 };
-    }
-    if (isMovie(item) && item.currentMinutes !== 0) {
-      dirty = true;
-      return { ...item, currentMinutes: 0 };
-    }
-    return item;
-  });
-  if (dirty) await setStorageData({ [STORAGE_KEY]: normalized });
-  return normalized;
+  return (data[STORAGE_KEY] as TrackedMedia[]) ?? [];
 }
 
 export async function getMediaById(id: string): Promise<TrackedMedia | undefined> {
@@ -198,11 +183,16 @@ export async function addMedia(input: AddMediaInput): Promise<TrackedMedia> {
   let newItem: TrackedMedia;
 
   if (input.mediaType === 'show') {
+    const season = status === 'next' ? 0 : input.currentSeason ?? 1;
+    const episode = status === 'next' ? 0 : input.currentEpisode ?? 1;
+    if (status !== 'next' && (!Number.isInteger(season) || season < 1 || !Number.isInteger(episode) || episode < 1)) {
+      throw new Error('[Nyatching List] Season and episode must be integers >= 1.');
+    }
     newItem = {
       ...baseData,
       mediaType: 'show',
-      currentSeason: status === 'next' ? 0 : input.currentSeason ?? 1,
-      currentEpisode: status === 'next' ? 0 : input.currentEpisode ?? 1,
+      currentSeason: season,
+      currentEpisode: episode,
       totalSeasons: input.totalSeasons,
       totalEpisodes: input.totalEpisodes,
       notify: true,
@@ -254,11 +244,13 @@ export async function updateMedia(input: UpdateMediaInput): Promise<TrackedMedia
       episode = 0;
     }
 
-    if (showUpdates.currentSeason !== undefined && (!Number.isInteger(season) || season < 0)) {
-      throw new Error('[Nyatching List] Season must be an integer >= 0.');
-    }
-    if (showUpdates.currentEpisode !== undefined && (!Number.isInteger(episode) || episode < 0)) {
-      throw new Error('[Nyatching List] Episode must be an integer >= 0.');
+    if (nextStatus !== 'next') {
+      if (showUpdates.currentSeason !== undefined && (!Number.isInteger(season) || season < 1)) {
+        throw new Error('[Nyatching List] Season must be an integer >= 1.');
+      }
+      if (showUpdates.currentEpisode !== undefined && (!Number.isInteger(episode) || episode < 1)) {
+        throw new Error('[Nyatching List] Episode must be an integer >= 1.');
+      }
     }
 
     const updatedShow: Show = {

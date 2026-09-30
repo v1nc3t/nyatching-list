@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import browser from 'webextension-polyfill'
 import { MediaStatus } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
@@ -197,7 +197,8 @@ watch(formSeason, (newSeason) => {
     }
   }
   if (newSeason < 1) {
-    if (newSeason < 0) formSeason.value = 0
+    if (formStatus.value !== 'next') formSeason.value = 1
+    else if (newSeason < 0) formSeason.value = 0
     return
   }
 
@@ -209,6 +210,14 @@ watch(formSeason, (newSeason) => {
       formEpisode.value = airedCount
     }
   }
+})
+
+watch(formEpisode, (episode) => {
+  if (formStatus.value === 'next') {
+    if (episode < 0) formEpisode.value = 0
+    return
+  }
+  if (episode < 1) formEpisode.value = 1
 })
 
 watch(formTotalEpisodes, () => {
@@ -411,9 +420,11 @@ const setStatus = (status: MediaStatus) => {
     return
   }
   if (status === 'next') {
-    formSeason.value = 0
-    formEpisode.value = 0
-    formMinutes.value = 0
+    void nextTick(() => {
+      formSeason.value = 0
+      formEpisode.value = 0
+      formMinutes.value = 0
+    })
     return
   }
   if (formSeason.value < 1) formSeason.value = 1
@@ -741,7 +752,7 @@ const handleAddMediaSubmit = async () => {
                   id="season-input"
                   v-model.number="formSeason"
                   type="number"
-                  min="0"
+                  :min="formStatus === 'next' ? 0 : 1"
                   :max="formTotalSeasons ? Number(formTotalSeasons) : undefined"
                   title="Focus, then scroll to adjust"
                   @wheel.prevent="
@@ -758,7 +769,7 @@ const handleAddMediaSubmit = async () => {
                   id="episode-input"
                   v-model.number="formEpisode"
                   type="number"
-                  min="0"
+                  :min="formStatus === 'next' ? 0 : 1"
                   :max="formTotalEpisodes ? Number(formTotalEpisodes) : undefined"
                   title="Focus, then scroll to adjust"
                   @wheel.prevent="

@@ -36,13 +36,13 @@ const settingFields = computed(() => [
   {
     key: 'episode' as const,
     label: 'New episodes',
-    hint: 'Notifies when a new episode / season of a show, with status waiting, is released.',
+    hint: 'Notifies when a new episode / season of a waiting show is released, and once when a next up show starts airing. Never turns both off.',
     value: settings.value.newSeasonCheckIntervalHours,
   },
   {
     key: 'reminder' as const,
     label: 'Reminders',
-    hint: 'Notifies when set time passes since you have updated a media with status waiting.',
+    hint: 'Notifies when the set time passes since you updated a watching title.',
     value: settings.value.reminderIntervalHours,
   },
 ])
