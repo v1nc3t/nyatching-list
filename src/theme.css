@@ -89,7 +89,8 @@ h1,
 .notif-title,
 .suggestion-title,
 .modal-subtitle,
-#title-input {
+#title-input,
+input[type='number'] {
   text-transform: none !important;
 }
 

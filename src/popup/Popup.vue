@@ -189,6 +189,10 @@ watch(formTotalSeasons, () => {
 })
 
 watch(formSeason, (newSeason) => {
+  // Empty is a mid-edit state (backspace before the next digit). Clamping it
+  // puts the minimum back immediately, so the field cannot be retyped.
+  if (typeof newSeason !== 'number' || !Number.isFinite(newSeason)) return
+
   const total = Number(formTotalSeasons.value)
   if (formTotalSeasons.value !== '' && !isNaN(total) && total > 0) {
     if (newSeason > total) {
@@ -213,6 +217,7 @@ watch(formSeason, (newSeason) => {
 })
 
 watch(formEpisode, (episode) => {
+  if (typeof episode !== 'number' || !Number.isFinite(episode)) return
   if (formStatus.value === 'next') {
     if (episode < 0) formEpisode.value = 0
     return
@@ -433,6 +438,54 @@ const setStatus = (status: MediaStatus) => {
 
 const formatStatus = (s: string) => (s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1))
 
+const progressMin = () => (formStatus.value === 'next' ? 0 : 1)
+
+// The first digit after focus replaces the value. Click again to edit in place.
+const replaceOnType = new WeakSet<HTMLInputElement>()
+
+const selectOnFocus = (event: FocusEvent) => {
+  const input = event.target
+  if (input instanceof HTMLInputElement) replaceOnType.add(input)
+}
+
+const placeCaret = (event: Event) => {
+  const input = event.target
+  if (input instanceof HTMLInputElement && document.activeElement === input) {
+    replaceOnType.delete(input)
+  }
+}
+
+const typeOverProgress = (event: KeyboardEvent) => {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement) || !replaceOnType.has(input)) return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.key.length !== 1 || !/\d/.test(event.key)) {
+    replaceOnType.delete(input)
+    return
+  }
+  event.preventDefault()
+  replaceOnType.delete(input)
+  // Assigning the same characters leaves a number input's selection in place.
+  input.value = ''
+  input.value = event.key
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+const commitSeason = () => {
+  if (typeof formSeason.value === 'number' && Number.isFinite(formSeason.value)) return
+  formSeason.value = progressMin()
+}
+
+const commitEpisode = () => {
+  if (typeof formEpisode.value === 'number' && Number.isFinite(formEpisode.value)) return
+  formEpisode.value = progressMin()
+}
+
+const finiteNumber = (value: number | string, fallback: number) => {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
 const handleNumberWheel = (
   event: WheelEvent,
   current: number | string,
@@ -477,8 +530,8 @@ const handleAddMediaSubmit = async () => {
       title: formTitle.value,
       status: formStatus.value,
       watchingUrl: formUrl.value,
-      currentSeason: formSeason.value,
-      currentEpisode: formEpisode.value,
+      currentSeason: finiteNumber(formSeason.value, progressMin()),
+      currentEpisode: finiteNumber(formEpisode.value, progressMin()),
       posterPath: selectedPosterPath.value,
       tmdbId: selectedTmdbId.value,
       ...(formTotalSeasons.value !== '' && !isNaN(totalSeasonsNum)
@@ -497,7 +550,7 @@ const handleAddMediaSubmit = async () => {
       title: formTitle.value,
       status: formStatus.value,
       watchingUrl: formUrl.value,
-      currentMinutes: formMinutes.value,
+      currentMinutes: Math.max(0, finiteNumber(formMinutes.value, 0)),
       posterPath: selectedPosterPath.value,
       tmdbId: selectedTmdbId.value,
       ...(formRuntimeMinutes.value !== '' && !isNaN(runtimeMinutesNum)
@@ -754,7 +807,11 @@ const handleAddMediaSubmit = async () => {
                   type="number"
                   :min="formStatus === 'next' ? 0 : 1"
                   :max="formTotalSeasons ? Number(formTotalSeasons) : undefined"
-                  title="Focus, then scroll to adjust"
+                  title="Type a number, or scroll to adjust"
+                  @focus="selectOnFocus"
+                  @pointerdown="placeCaret"
+                  @keydown="typeOverProgress"
+                  @blur="commitSeason"
                   @wheel.prevent="
                     handleNumberWheel($event, formSeason, (n) => (formSeason = n), {
                       min: formStatus === 'next' ? 0 : 1,
@@ -771,7 +828,11 @@ const handleAddMediaSubmit = async () => {
                   type="number"
                   :min="formStatus === 'next' ? 0 : 1"
                   :max="formTotalEpisodes ? Number(formTotalEpisodes) : undefined"
-                  title="Focus, then scroll to adjust"
+                  title="Type a number, or scroll to adjust"
+                  @focus="selectOnFocus"
+                  @pointerdown="placeCaret"
+                  @keydown="typeOverProgress"
+                  @blur="commitEpisode"
                   @wheel.prevent="
                     handleNumberWheel($event, formEpisode, (n) => (formEpisode = n), {
                       min: formStatus === 'next' ? 0 : 1,
@@ -790,7 +851,10 @@ const handleAddMediaSubmit = async () => {
                   type="number"
                   min="1"
                   placeholder="e.g. 5"
-                  title="Focus, then scroll to adjust"
+                  title="Type a number, or scroll to adjust"
+                  @focus="selectOnFocus"
+                  @pointerdown="placeCaret"
+                  @keydown="typeOverProgress"
                   @wheel.prevent="
                     handleNumberWheel($event, formTotalSeasons, (n) => (formTotalSeasons = String(n)), {
                       min: 1,
@@ -806,7 +870,10 @@ const handleAddMediaSubmit = async () => {
                   type="number"
                   min="1"
                   placeholder="e.g. 10"
-                  title="Focus, then scroll to adjust"
+                  title="Type a number, or scroll to adjust"
+                  @focus="selectOnFocus"
+                  @pointerdown="placeCaret"
+                  @keydown="typeOverProgress"
                   @wheel.prevent="
                     handleNumberWheel($event, formTotalEpisodes, (n) => (formTotalEpisodes = String(n)), {
                       min: 1,
@@ -826,7 +893,10 @@ const handleAddMediaSubmit = async () => {
                   v-model.number="formMinutes"
                   type="number"
                   min="0"
-                  title="Focus, then scroll to adjust"
+                  title="Type a number, or scroll to adjust"
+                  @focus="selectOnFocus"
+                  @pointerdown="placeCaret"
+                  @keydown="typeOverProgress"
                   @wheel.prevent="
                     handleNumberWheel($event, formMinutes, (n) => (formMinutes = n), {
                       min: 0,
@@ -844,7 +914,10 @@ const handleAddMediaSubmit = async () => {
                   type="number"
                   min="1"
                   placeholder="e.g. 120"
-                  title="Focus, then scroll to adjust"
+                  title="Type a number, or scroll to adjust"
+                  @focus="selectOnFocus"
+                  @pointerdown="placeCaret"
+                  @keydown="typeOverProgress"
                   @wheel.prevent="
                     handleNumberWheel(
                       $event,
@@ -865,7 +938,10 @@ const handleAddMediaSubmit = async () => {
                 min="1900"
                 max="2100"
                 placeholder="e.g. 2023"
-                title="Focus, then scroll to adjust"
+                title="Type a number, or scroll to adjust"
+                @focus="selectOnFocus"
+                @pointerdown="placeCaret"
+                @keydown="typeOverProgress"
                 @wheel.prevent="
                   handleNumberWheel($event, formReleaseYear, (n) => (formReleaseYear = String(n)), {
                     min: 1900,
@@ -1216,10 +1292,6 @@ body::-webkit-scrollbar {
 .form-group input[type='number'] {
   appearance: textfield;
   -moz-appearance: textfield;
-}
-
-.form-group input[type='number']:focus {
-  cursor: ns-resize;
 }
 
 .form-group input[type='number']::-webkit-outer-spin-button,
