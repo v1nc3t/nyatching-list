@@ -183,7 +183,11 @@ const filteredMedia = computed(() => {
       const matchesType = typeFilter.value === 'all' || item.mediaType === typeFilter.value
       return matchesSearch && matchesStatus && matchesType
     })
-    .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status])
+    .sort(
+      (a, b) =>
+        STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
+        (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt),
+    )
 })
 
 // Handlers for Show
