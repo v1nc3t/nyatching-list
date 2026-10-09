@@ -461,8 +461,14 @@ const setStatus = (status: MediaStatus) => {
     })
     return
   }
-  if (formSeason.value < 1) formSeason.value = 1
-  if (formEpisode.value < 1) formEpisode.value = 1
+  if (formSeason.value < 1 || formEpisode.value < 1) {
+    skipProgressStatus = true
+    void nextTick(() => {
+      skipProgressStatus = false
+    })
+    if (formSeason.value < 1) formSeason.value = 1
+    if (formEpisode.value < 1) formEpisode.value = 1
+  }
 }
 
 const formatStatus = (s: string) => (s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1))

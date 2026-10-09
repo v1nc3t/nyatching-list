@@ -63,9 +63,13 @@ const showInfoCache = new Map<number, TMDBShowInfo>()
 const loadShowInfo = async (tmdbId: number): Promise<TMDBShowInfo | null> => {
   const cached = showInfoCache.get(tmdbId)
   if (cached) return cached
-  const info = await getTMDBShowInfo(tmdbId)
-  if (info) showInfoCache.set(tmdbId, info)
-  return info
+  try {
+    const info = await getTMDBShowInfo(tmdbId)
+    if (info) showInfoCache.set(tmdbId, info)
+    return info
+  } catch {
+    return null
+  }
 }
 
 const loadMedia = async () => {
