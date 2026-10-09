@@ -1,5 +1,6 @@
 import type { TMDBAiredEpisode, TMDBEpisodeRef } from './aired-episode'
 import { airedEpisodeCountForSeason, getLatestAiredEpisode } from './aired-episode'
+import type { MediaStatus } from '../types'
 
 export type { TMDBEpisodeRef, TMDBAiredEpisode } from './aired-episode'
 export {
@@ -31,6 +32,8 @@ export interface TMDBShowInfo {
   seasons: TMDBSeasonInfo[]
   lastSeason: TMDBSeasonInfo
   latestAired: TMDBAiredEpisode | null
+  /** TMDB Ended or Canceled. False when the status is missing. */
+  ended: boolean
 }
 
 export interface TMDBExternalFindResult {
@@ -49,6 +52,7 @@ export interface TMDBTvDetails {
   seasons?: { season_number?: number; episode_count?: number }[]
   last_episode_to_air?: TMDBEpisodeRef | null
   next_episode_to_air?: TMDBEpisodeRef | null
+  status?: string
 }
 
 export interface TMDBMovieDetails {
@@ -170,7 +174,33 @@ export const parseTMDBShowInfo = (details: TMDBTvDetails | null): TMDBShowInfo |
       ? { ...lastSeason, episodeCount: Math.max(1, lastSeason.episodeCount) }
       : { seasonNumber: totalSeasons, episodeCount: 1 },
     latestAired: getLatestAiredEpisode(details),
+    ended: details.status === 'Ended' || details.status === 'Canceled',
   }
+}
+
+/** Status after a season or episode step. Caught up on an unfinished show waits. */
+export const statusAfterShowProgress = (input: {
+  status: MediaStatus
+  season: number
+  episode: number
+  nextSeason: number
+  nextEpisode: number
+  info: TMDBShowInfo | null
+}): MediaStatus => {
+  const { status, season, episode, nextSeason, nextEpisode, info } = input
+  if (status === 'dropped') return status
+
+  const latest = info?.latestAired
+  const atLastAired = Boolean(latest && latest.season === nextSeason && latest.episode === nextEpisode)
+  if (atLastAired && info && latest) {
+    const seasonsToCome = info.totalSeasons > latest.season
+    if (!info.ended || seasonsToCome) return 'waiting'
+    return 'completed'
+  }
+
+  const moved = nextSeason !== season || nextEpisode !== episode
+  if (moved && (status === 'waiting' || status === 'completed' || status === 'next')) return 'watching'
+  return status
 }
 
 export const getTMDBShowInfo = async (id: number): Promise<TMDBShowInfo | null> => {
@@ -330,3 +360,68 @@ export const fetchTmdbByImdbId = async (
     return null
   }
 }
+
+const selfCheckShowProgressStatus = (): void => {
+  const ongoing: TMDBShowInfo = {
+    totalSeasons: 3,
+    seasons: [],
+    lastSeason: { seasonNumber: 2, episodeCount: 8 },
+    latestAired: { season: 2, episode: 8 },
+    ended: false,
+  }
+  const endedShow: TMDBShowInfo = { ...ongoing, totalSeasons: 2, ended: true }
+  const step = (over: Partial<Parameters<typeof statusAfterShowProgress>[0]> = {}) =>
+    statusAfterShowProgress({
+      status: 'watching',
+      season: 2,
+      episode: 7,
+      nextSeason: 2,
+      nextEpisode: 8,
+      info: ongoing,
+      ...over,
+    })
+
+  if (step({ status: 'waiting', season: 2, episode: 8, nextEpisode: 7 }) !== 'watching') {
+    throw new Error('backing up a waiting show returns to watching')
+  }
+  if (step({ status: 'waiting', season: 2, episode: 8, nextEpisode: 7, info: null }) !== 'watching') {
+    throw new Error('backing up a waiting show returns to watching without tmdb')
+  }
+  if (step() !== 'waiting') throw new Error('last aired episode of an ongoing show waits')
+  if (step({ info: endedShow }) !== 'completed') throw new Error('last aired episode of an ended show completes')
+  if (step({ info: { ...endedShow, totalSeasons: 3 } }) !== 'waiting') {
+    throw new Error('later seasons stay waiting')
+  }
+  if (step({ status: 'completed', season: 2, episode: 8, nextEpisode: 7, info: endedShow }) !== 'watching') {
+    throw new Error('backing up a completed show returns to watching')
+  }
+  if (step({ status: 'next', episode: 0, nextEpisode: 1, info: null }) !== 'watching') {
+    throw new Error('leaving next up starts watching')
+  }
+  if (step({ status: 'dropped', season: 2, episode: 8, nextEpisode: 7 }) !== 'dropped') {
+    throw new Error('dropped stays dropped')
+  }
+  if (step({ nextEpisode: 7 }) !== 'watching') throw new Error('mid-season progress stays watching')
+  if (step({ status: 'waiting', season: 1, episode: 8, nextSeason: 2, nextEpisode: 1 }) !== 'watching') {
+    throw new Error('starting a later season leaves waiting')
+  }
+
+  const parsed = parseTMDBShowInfo({
+    status: 'Returning Series',
+    number_of_seasons: 3,
+    seasons: [{ season_number: 2, episode_count: 8 }],
+    last_episode_to_air: { season_number: 2, episode_number: 8 },
+  })
+  if (!parsed || parsed.ended || parsed.latestAired?.episode !== 8) {
+    throw new Error('returning series is not ended')
+  }
+  const endedParsed = parseTMDBShowInfo({
+    status: 'Ended',
+    number_of_seasons: 2,
+    seasons: [{ season_number: 2, episode_count: 8 }],
+    last_episode_to_air: { season_number: 2, episode_number: 8 },
+  })
+  if (!endedParsed?.ended) throw new Error('ended series is ended')
+}
+
+selfCheckShowProgressStatus()
