@@ -10,6 +10,7 @@ import {
   fetchTmdbByImdbId,
   parseTMDBShowInfo,
   getAiredEpisodeCountForSeason,
+  statusAfterShowProgress,
   completedProgressFromShowInfo,
   TMDBSuggestion,
   TMDBShowInfo,
@@ -128,8 +129,16 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
   }
 }
 
+let skipProgressStatus = false
+
 const applyCompletedProgress = () => {
   if (formStatus.value !== 'completed') return
+  if (formType.value === 'show') {
+    skipProgressStatus = true
+    void nextTick(() => {
+      skipProgressStatus = false
+    })
+  }
 
   if (formType.value === 'show') {
     if (tmdbShowInfo.value) {
@@ -238,13 +247,33 @@ watch(formType, () => {
   }
 })
 
-watch([formSeason, formEpisode, formMinutes], () => {
-  if (formStatus.value !== 'next') return
-  const started =
-    formType.value === 'show' ? formSeason.value > 0 || formEpisode.value > 0 : formMinutes.value > 0
-  if (!started) return
-  formStatus.value = 'watching'
-  if (formType.value === 'show' && formSeason.value < 1) formSeason.value = 1
+watch([formSeason, formEpisode, formMinutes], ([season, episode, minutes], previous) => {
+  if (skipProgressStatus) {
+    skipProgressStatus = false
+    return
+  }
+  if (formType.value !== 'show') {
+    if (formStatus.value !== 'next' || minutes <= 0) return
+    formStatus.value = 'watching'
+    return
+  }
+  if (!previous) return
+  if (typeof season !== 'number' || typeof episode !== 'number') return
+  if (!Number.isFinite(season) || !Number.isFinite(episode)) return
+  if (formStatus.value === 'next' && season === 0 && episode === 0) return
+
+  const [prevSeason, prevEpisode] = previous
+  const nextStatus = statusAfterShowProgress({
+    status: formStatus.value,
+    season: typeof prevSeason === 'number' && Number.isFinite(prevSeason) ? prevSeason : season,
+    episode: typeof prevEpisode === 'number' && Number.isFinite(prevEpisode) ? prevEpisode : episode,
+    nextSeason: season,
+    nextEpisode: episode,
+    info: tmdbShowInfo.value,
+  })
+  if (nextStatus === formStatus.value) return
+  formStatus.value = nextStatus
+  if (nextStatus === 'watching' && season < 1 && episode > 0) formSeason.value = 1
 })
 
 const clearTmdbDetails = () => {
