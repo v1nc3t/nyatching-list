@@ -35,7 +35,8 @@ const mediaCount = ref(0)
 const isModalOpen = ref(false)
 const errorMessage = ref('')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
-const supportLink = ref('https://buymeacoffee.com/v1c3nt')
+const supportLink = ref('https://ko-fi.com/v1nc3t')
+const year = new Date().getFullYear()
 const isImdbPage = ref(false)
 const imdbInList = ref(false)
 
@@ -1002,12 +1003,14 @@ const handleAddMediaSubmit = async () => {
 
     <!-- Footer -->
     <footer class="site-footer">
+      <span class="footer-copy">© {{ year }} v1nc3t</span>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        created by v1nc3t
+        source
       </a>
       <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        support v1nc3t
+        support
       </a>
     </footer>
   </main>
@@ -1623,6 +1626,11 @@ body::-webkit-scrollbar {
   justify-content: center;
   gap: 0.75rem;
   flex-shrink: 0;
+}
+
+.footer-copy {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .footer-link {

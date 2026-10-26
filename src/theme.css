@@ -65,7 +65,8 @@ h1,
 .section-label,
 .form-group label,
 .notif-time,
-.footer-link {
+.footer-link,
+.footer-copy {
   font-family: var(--font-mono);
 }
 

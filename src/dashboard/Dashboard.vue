@@ -57,7 +57,8 @@ const STATUS_RANK: Record<MediaStatus, number> = {
 }
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
-const supportLink = ref('https://buymeacoffee.com/v1c3nt')
+const supportLink = ref('https://ko-fi.com/v1nc3t')
+const year = new Date().getFullYear()
 const showInfoCache = new Map<number, TMDBShowInfo>()
 
 const loadShowInfo = async (tmdbId: number): Promise<TMDBShowInfo | null> => {
@@ -837,12 +838,14 @@ const stopTitleMarquee = (event: Event) => {
 
     <!-- Footer -->
     <footer class="site-footer">
+      <span class="footer-copy">© {{ year }} v1nc3t</span>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        created by v1nc3t
+        source
       </a>
       <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        support v1nc3t
+        support
       </a>
     </footer>
   </div>
@@ -1896,6 +1899,11 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
+}
+
+.footer-copy {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .footer-link {
