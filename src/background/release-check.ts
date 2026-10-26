@@ -19,13 +19,15 @@ export interface ReleaseCheckResult {
   notify: boolean
   notice: ReleaseNotice | null
   updates: Partial<Show>
+  /** Waiting show whose next episode is out: move it to watching. */
+  watchNow: boolean
 }
 
-export const isNotifiableShow = (media: TrackedMedia): media is Show =>
+/** Waiting shows are checked even with Notify off, so they can still move to watching. */
+export const isReleaseCheckShow = (media: TrackedMedia): media is Show =>
   isShow(media) &&
-  isNotifyEnabled(media) &&
-  (media.status === 'waiting' || media.status === 'next') &&
-  Boolean(media.tmdbId)
+  Boolean(media.tmdbId) &&
+  (media.status === 'waiting' || (media.status === 'next' && isNotifyEnabled(media)))
 
 export const notifyAtOnDate = (now: number = Date.now()): number => {
   const date = new Date(now)
@@ -150,18 +152,19 @@ export const decideReleaseAction = (
   seasonEpisodeCount?: number
 ): ReleaseCheckResult => {
   if (!latest) {
-    return { notify: false, notice: null, updates: metaUpdates }
+    return { notify: false, notice: null, updates: metaUpdates, watchNow: false }
   }
 
   const next = nextEpisodeToWatch(show, seasonEpisodeCount)
   if (!hasAired(latest, next)) {
-    return { notify: false, notice: null, updates: metaUpdates }
+    return { notify: false, notice: null, updates: metaUpdates, watchNow: false }
   }
 
+  const watchNow = show.status === 'waiting'
   const alreadyTold =
     show.lastNotifiedSeason === next.season && show.lastNotifiedEpisode === next.episode
   if (alreadyTold) {
-    return { notify: false, notice: null, updates: metaUpdates }
+    return { notify: false, notice: null, updates: metaUpdates, watchNow }
   }
 
   return {
@@ -172,6 +175,7 @@ export const decideReleaseAction = (
       lastNotifiedSeason: next.season,
       lastNotifiedEpisode: next.episode,
     },
+    watchNow,
   }
 }
 
@@ -182,13 +186,23 @@ export const decideNextUpRelease = (
   metaUpdates: Partial<Show>
 ): ReleaseCheckResult => {
   if (show.lastReleaseNotifiedAt || show.awaitingRelease === false) {
-    return { notify: false, notice: null, updates: metaUpdates }
+    return { notify: false, notice: null, updates: metaUpdates, watchNow: false }
   }
   if (!latest) {
-    return { notify: false, notice: null, updates: { ...metaUpdates, awaitingRelease: true } }
+    return {
+      notify: false,
+      notice: null,
+      updates: { ...metaUpdates, awaitingRelease: true },
+      watchNow: false,
+    }
   }
   if (show.awaitingRelease !== true) {
-    return { notify: false, notice: null, updates: { ...metaUpdates, awaitingRelease: false } }
+    return {
+      notify: false,
+      notice: null,
+      updates: { ...metaUpdates, awaitingRelease: false },
+      watchNow: false,
+    }
   }
   return {
     notify: true,
@@ -198,6 +212,7 @@ export const decideNextUpRelease = (
       lastNotifiedSeason: latest.season,
       lastNotifiedEpisode: latest.episode,
     },
+    watchNow: false,
   }
 }
 
@@ -245,6 +260,20 @@ export const selfCheckReleaseSchedule = (): void => {
   if (again.notify) throw new Error('next up notifies once')
   const aired = decideNextUpRelease(blankNext(), { season: 1, episode: 1 }, {})
   if (aired.notify || aired.updates.awaitingRelease !== false) throw new Error('already airing next up stays quiet')
+  if (burst.watchNow) throw new Error('next up stays next up')
+
+  const atE3 = blankNext({ status: 'waiting', currentEpisode: 3 })
+  const out = decideReleaseAction(atE3, { season: 1, episode: 4 }, {})
+  if (!out.notify || !out.watchNow) throw new Error('new episode alerts and moves to watching')
+  if (decideReleaseAction(atE3, { season: 1, episode: 3 }, {}).watchNow) {
+    throw new Error('nothing new stays waiting')
+  }
+  const told = decideReleaseAction(
+    { ...atE3, lastNotifiedSeason: 1, lastNotifiedEpisode: 4 },
+    { season: 1, episode: 4 },
+    {}
+  )
+  if (told.notify || !told.watchNow) throw new Error('already alerted still moves to watching')
 }
 
 selfCheckReleaseSchedule()

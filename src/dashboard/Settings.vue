@@ -36,7 +36,7 @@ const settingFields = computed(() => [
   {
     key: 'episode' as const,
     label: 'New episodes',
-    hint: 'Notifies when a new episode / season of a waiting show is released, and once when a next up show starts airing. Never turns both off.',
+    hint: 'A waiting show with a new episode / season moves to watching, and notifies if Notify is on. A next up show notifies once when it starts airing. Never turns this off.',
     value: settings.value.newSeasonCheckIntervalHours,
   },
   {

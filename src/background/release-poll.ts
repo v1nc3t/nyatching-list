@@ -11,7 +11,7 @@ import {
 import {
   decideNextUpRelease,
   decideReleaseAction,
-  isNotifiableShow,
+  isReleaseCheckShow,
   buildShowMetaUpdates,
   ReleaseNotice,
 } from './release-check'
@@ -23,7 +23,7 @@ import {
   releasesSentToday,
   remindersSentToday,
 } from './reminder-check'
-import { Show, TrackedMedia } from '../types'
+import { Show, TrackedMedia, isNotifyEnabled } from '../types'
 import {
   TMDBAiredEpisode,
   compareAiredEpisodes,
@@ -132,23 +132,20 @@ const processShowRelease = async (show: Show): Promise<PendingRelease | null> =>
         : decideReleaseAction(show, latest, totals, seasonEpisodeCount)
 
     const { lastNotifiedSeason, lastNotifiedEpisode, ...meta } = decision.updates
+    const alert: PendingRelease | null =
+      isNotifyEnabled(show) &&
+      decision.notify &&
+      decision.notice &&
+      lastNotifiedSeason !== undefined &&
+      lastNotifiedEpisode !== undefined
+        ? { show, notice: decision.notice, lastNotifiedSeason, lastNotifiedEpisode }
+        : null
+    // A queued alert switches on send: a show held back by the daily cap stays waiting for later.
+    if (decision.watchNow && !alert) meta.status = 'watching'
     if (Object.keys(meta).length > 0) {
       await updateMedia({ id: show.id, ...meta })
     }
-    if (
-      !decision.notify ||
-      !decision.notice ||
-      lastNotifiedSeason === undefined ||
-      lastNotifiedEpisode === undefined
-    ) {
-      return null
-    }
-    return {
-      show,
-      notice: decision.notice,
-      lastNotifiedSeason,
-      lastNotifiedEpisode,
-    }
+    return alert
   } catch (err) {
     console.error(`[Nyatching] Error processing show "${show.title}":`, err)
     return null
@@ -162,7 +159,7 @@ export const checkShowReleases = async (): Promise<void> => {
   const now = Date.now()
   const all = await getAllMedia()
   const pending: PendingRelease[] = []
-  for (const show of all.filter(isNotifiableShow)) {
+  for (const show of all.filter(isReleaseCheckShow)) {
     const found = await processShowRelease(show)
     if (found) pending.push(found)
   }
@@ -180,6 +177,7 @@ export const checkShowReleases = async (): Promise<void> => {
       lastNotifiedSeason: item.lastNotifiedSeason,
       lastNotifiedEpisode: item.lastNotifiedEpisode,
       lastReleaseNotifiedAt: now,
+      ...(item.show.status === 'waiting' ? { status: 'watching' as const } : {}),
     })
   }
   await saveSettings({ lastReleaseCheckAt: now })
