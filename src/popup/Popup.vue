@@ -117,7 +117,7 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
           applyShowProgressFromTmdb()
         } else if (tmdbData.mediaType === 'movie' && tmdbData.runtimeMinutes) {
           formRuntimeMinutes.value = tmdbData.runtimeMinutes.toString()
-          applyCompletedProgress()
+          applyLatestProgress()
         }
 
         if (autoOpenModal) {
@@ -134,8 +134,12 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
 
 let skipProgressStatus = false
 
-const applyCompletedProgress = () => {
-  if (formStatus.value !== 'completed') return
+// Completed jumps to the end; waiting (shows only) jumps to the latest aired episode
+const applyLatestProgress = () => {
+  const waitingShow = formStatus.value === 'waiting' && formType.value === 'show'
+  if (formStatus.value !== 'completed' && !waitingShow) return
+  // Nothing aired yet, so a waiting show has no latest episode to jump to
+  if (waitingShow && tmdbShowInfo.value && !tmdbShowInfo.value.latestAired) return
   if (formType.value === 'show') {
     skipProgressStatus = true
     void nextTick(() => {
@@ -176,8 +180,8 @@ const applyShowProgressFromTmdb = () => {
 
   formTotalSeasons.value = info.totalSeasons.toString()
 
-  if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+  if (formStatus.value === 'completed' || (formStatus.value === 'waiting' && info.latestAired)) {
+    applyLatestProgress()
     return
   }
 
@@ -245,8 +249,8 @@ watch(formTotalEpisodes, () => {
 })
 
 watch(formType, () => {
-  if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+  if (formStatus.value === 'completed' || formStatus.value === 'waiting') {
+    applyLatestProgress()
   }
 })
 
@@ -306,13 +310,14 @@ const setFormType = (nextType: 'show' | 'movie') => {
   }
 
   if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+    applyLatestProgress()
   }
 }
 
+// Completed only: a season change updates Released Episodes, so waiting would snap the season back
 watch([formTotalSeasons, formTotalEpisodes, formRuntimeMinutes], () => {
   if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+    applyLatestProgress()
   }
 })
 
@@ -384,7 +389,7 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
     tmdbShowInfo.value = null
     const details = await getTMDBDetails(item.id, 'movie')
     formRuntimeMinutes.value = details?.runtime ? details.runtime.toString() : ''
-    applyCompletedProgress()
+    applyLatestProgress()
   }
 }
 
@@ -453,7 +458,7 @@ const setStatus = (status: MediaStatus) => {
   formStatus.value = status
   isStatusOpen.value = false
   if (status === 'completed') {
-    applyCompletedProgress()
+    applyLatestProgress()
     return
   }
   if (status === 'next') {
@@ -464,6 +469,8 @@ const setStatus = (status: MediaStatus) => {
     })
     return
   }
+  // Jumps a show to the latest episode; the clamp below covers anything it leaves under 1
+  if (status === 'waiting') applyLatestProgress()
   if (formSeason.value < 1 || formEpisode.value < 1) {
     skipProgressStatus = true
     void nextTick(() => {
