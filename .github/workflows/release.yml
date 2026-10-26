@@ -1,33 +1,41 @@
-name: Build and Release Extension
+name: Release
 
 on:
-  push:
-    tags:
-      - 'v*' # Triggers whenever you push a tag starting with 'v', like v1.0.0
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+        required: true
 
 permissions:
   contents: write
 
+concurrency: release
+
 jobs:
-  build:
+  release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       VITE_TMDB_READ_TOKEN: ${{ secrets.VITE_TMDB_READ_TOKEN }}
 
     steps:
-      # 1. Checkout repository code
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js environment
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
 
-      # 3. Install dependencies
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm ci
 
       - name: Verify TMDB token
@@ -37,29 +45,40 @@ jobs:
             exit 1
           fi
 
-      # 4. Build Chrome Version
-      - name: Build Chrome Extension
-        run: |
-          npm run build
-          cd build && zip -r ../nyatching-chrome.zip * && cd ..
-
-      # 5. Build Firefox Version
-      - name: Build Firefox Extension
+      # manifest version is read from package.json
+      - name: Bump version
+        id: bump
         env:
-          TARGET_BROWSER: firefox
+          BUMP: ${{ inputs.bump }}
         run: |
-          npm run build
-          cd build-firefox && zip -r ../nyatching-firefox.zip * && cd ..
+          npm version "$BUMP" --no-git-tag-version
+          echo "version=$(npm pkg get version | tr -d '"')" >> "$GITHUB_OUTPUT"
 
-      # 6. Create Source Code Zip for AMO Submission
-      - name: Create Source Code Zip
+      # builds both Chrome (build/) and Firefox (build-firefox/)
+      - name: Build
+        run: npm run build
+
+      - name: Zip
         run: |
+          cd build && zip -r ../nyatching-chrome.zip * && cd ..
+          cd build-firefox && zip -r ../nyatching-firefox.zip * && cd ..
           zip -r source-code.zip . -x "node_modules/*" -x ".git/*" -x "build/*" -x "build-firefox/*" -x "*.zip" -x ".env" -x ".env.local"
 
-      # 7. Create GitHub Release and Upload Artifacts
-      - name: Create Release
+      # after the build, so a failed build pushes nothing
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: release v$VERSION"
+          git tag "v$VERSION"
+          git push --atomic origin HEAD:main "v$VERSION"
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.bump.outputs.version }}
           files: |
             nyatching-chrome.zip
             nyatching-firefox.zip
