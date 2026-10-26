@@ -727,7 +727,7 @@ const stopTitleMarquee = (event: Event) => {
           <div class="card-bottom">
             <!-- TV Show Progress Controls -->
             <div v-if="isShow(item)" class="progress-container">
-              <div class="progress-box">
+              <div class="progress-box season-box">
                 <div class="progress-info">
                   <span class="progress-label">Season</span>
                   <span class="progress-val">
@@ -745,7 +745,7 @@ const stopTitleMarquee = (event: Event) => {
                 </div>
               </div>
 
-              <div class="progress-box">
+              <div class="progress-box episode-box">
                 <div class="progress-info">
                   <span class="progress-label">Episode</span>
                   <span class="progress-val">
@@ -766,7 +766,7 @@ const stopTitleMarquee = (event: Event) => {
 
             <!-- Movie Progress Controls -->
             <div v-else-if="isMovie(item)" class="progress-container">
-              <div class="progress-box scrollable-input-box">
+              <div class="progress-box scrollable-input-box minutes-box">
                 <div class="progress-info">
                   <span class="progress-label">Minutes Watched</span>
                 </div>
@@ -1297,17 +1297,20 @@ html, body {
 }
 
 .media-grid.is-list {
-  grid-template-columns: 1fr;
-  gap: 0.45rem;
+  /* auto, not 42px: the card's padding is added to the edge tracks */
+  grid-template-columns: auto minmax(0, 1fr) auto auto 8rem auto;
+  column-gap: 0.85rem;
+  row-gap: 0.45rem;
   container: media-list / inline-size;
 }
 
+/* Rows share the list's column tracks so every column lines up */
 .media-grid.is-list .media-card {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto 8rem auto;
-  grid-template-areas: "poster title progress status delete";
+  grid-template-columns: subgrid;
+  grid-template-areas: "poster title season episode status delete";
   align-items: center;
-  column-gap: 0.85rem;
   padding: 0.5rem 0.7rem;
 }
 
@@ -1344,20 +1347,31 @@ html, body {
 }
 
 .media-grid.is-list .progress-container {
-  grid-area: progress;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 1.15rem;
-  min-width: 0;
+  display: contents;
+}
+
+.media-grid.is-list .season-box {
+  grid-area: season;
+}
+
+.media-grid.is-list .episode-box {
+  grid-area: episode;
+}
+
+.media-grid.is-list .minutes-box {
+  grid-column: season-start / episode-end;
 }
 
 .media-grid.is-list .progress-box {
   flex: 0 0 auto;
-  justify-content: flex-start;
+  justify-content: space-between;
   background: transparent;
   padding: 0;
   gap: 0.45rem;
+}
+
+.media-grid.is-list .progress-val {
+  font-variant-numeric: tabular-nums;
 }
 
 .media-grid.is-list .progress-info {
@@ -1396,6 +1410,9 @@ html, body {
 .media-grid.is-list .title-actions .type-badge {
   padding: 0.12rem 0.4rem;
   font-weight: 700;
+  /* fits "movie", so edit link and notify line up across rows */
+  box-sizing: content-box;
+  min-width: 5.5ch;
 }
 
 .media-grid:not(.is-list) .card-top {
@@ -1419,7 +1436,21 @@ html, body {
       "poster title delete"
       "progress progress progress"
       "status status status";
+    column-gap: 0.85rem;
     row-gap: 0.45rem;
+  }
+
+  .media-grid.is-list .progress-container {
+    grid-area: progress;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 1.15rem;
+    min-width: 0;
+  }
+
+  .media-grid.is-list .progress-box {
+    justify-content: flex-start;
   }
 
   .media-grid.is-list .status-row-box {
