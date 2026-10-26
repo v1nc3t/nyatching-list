@@ -826,6 +826,10 @@ const stopTitleMarquee = (event: Event) => {
         source
       </a>
       <span class="footer-divider" aria-hidden="true">|</span>
+      <a :href="githubLink + '/discussions'" target="_blank" rel="noopener noreferrer" class="footer-link">
+        discussions
+      </a>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         support
       </a>

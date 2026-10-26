@@ -1181,6 +1181,10 @@ const handleAddMediaSubmit = async () => {
         source
       </a>
       <span class="footer-divider" aria-hidden="true">|</span>
+      <a :href="githubLink + '/discussions'" target="_blank" rel="noopener noreferrer" class="footer-link">
+        discussions
+      </a>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         support
       </a>
@@ -1961,7 +1965,8 @@ a.quick-title:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
   flex-shrink: 0;
 }
 

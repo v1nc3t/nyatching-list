@@ -9,13 +9,13 @@
 
 A browser extension that helps you keep track of TV shows and movies you are watching.
 
-<img src="./src/assets/nyatching-list-dashboard-dark.png" alt="Dashboard in dark mode" width="100%" />
+<img src="./docs/img/nyatching-list-dashboard-dark.png" alt="Dashboard in dark mode" width="100%" />
 
-<img src="./src/assets/nyatching-list-dashboard-light.png" alt="Dashboard in light mode" width="100%" />
+<img src="./docs/img/nyatching-list-dashboard-light.png" alt="Dashboard in light mode" width="100%" />
 
-<img src="./src/assets/nyatching-list-popup-dark.png" alt="Add form in dark mode" width="100%" />
+<img src="./docs/img/nyatching-list-popup-dark.png" alt="Add form in dark mode" width="100%" />
 
-<img src="./src/assets/nyatching-list-popup-light.png" alt="Add form in light mode" width="100%" />
+<img src="./docs/img/nyatching-list-popup-light.png" alt="Add form in light mode" width="100%" />
 
 ---
 
