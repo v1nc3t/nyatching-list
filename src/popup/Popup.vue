@@ -37,6 +37,7 @@ const errorMessage = ref('')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
 const supportLink = ref('https://buymeacoffee.com/v1c3nt')
 const isImdbPage = ref(false)
+const imdbInList = ref(false)
 
 // Form State
 const formType = ref<'show' | 'movie'>('show')
@@ -90,7 +91,8 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
         )
 
         if (exists) {
-          errorMessage.value = 'Item is already in your watchlist'
+          // No banner: it arrived after the popup opened, resized it, and Firefox painted it glitched
+          imdbInList.value = true
           isModalOpen.value = false
           return
         }
@@ -673,19 +675,19 @@ const handleAddMediaSubmit = async () => {
     </header>
 
     <div class="content">
-      <!-- Global/Context Banner for duplicate notification -->
-      <div v-if="errorMessage && !isModalOpen" class="error-banner">
-        {{ errorMessage }}
-      </div>
-
       <!-- Summary view -->
       <div v-if="!isModalOpen" class="count-card accent">
         <div class="count-display">
           <span class="count-label">Media in Watchlist</span>
           <span class="count-number">{{ mediaCount }}</span>
         </div>
-        <button class="primary-btn" @click="openModal">
-          {{ isImdbPage ? '+ from IMDb' : '+ Media' }}
+        <button
+          class="primary-btn"
+          :disabled="imdbInList"
+          :title="imdbInList ? 'Already in your watchlist' : undefined"
+          @click="openModal"
+        >
+          {{ imdbInList ? 'In watchlist' : isImdbPage ? '+ from IMDb' : '+ Media' }}
         </button>
       </div>
 
@@ -1223,9 +1225,14 @@ body::-webkit-scrollbar {
   border: none;
 }
 
-.primary-btn:hover {
+.primary-btn:hover:not(:disabled) {
   background-color: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .secondary-btn {
