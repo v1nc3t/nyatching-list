@@ -40,7 +40,7 @@ Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 - **Notifications:** Desktop alerts when a new episode or season is out
 - **Dark / light theme:** Switch themes from the popup or dashboard
 - **Local storage:** Your list stays on your device
-- **Backup:** Export your list, settings, or notification history to JSON and import it back, from dashboard settings
+- **Backup:** Export your list, settings, or notification history to JSON and import it back, from dashboard settings. Pick titles by type and status (all, only some, or all except some), leave out fields you don't need, and choose what to import
 
 ---
 
