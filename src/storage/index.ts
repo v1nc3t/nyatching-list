@@ -303,6 +303,262 @@ export async function deleteMedia(id: string): Promise<void> {
 }
 
 // ==========================================
+// BACKUP (EXPORT / IMPORT)
+// ==========================================
+
+export const THEME_STORAGE_KEY = 'nyatching_theme' as const;
+const BACKUP_FORMAT = 'nyatching-list-backup' as const;
+
+type Theme = 'light' | 'dark';
+
+export interface BackupSettings {
+  newSeasonCheckIntervalHours: number;
+  reminderIntervalHours: number;
+  theme?: Theme;
+}
+
+/** Every part is optional: a file holds only what was picked on export. */
+export interface Backup {
+  format: typeof BACKUP_FORMAT;
+  version: 1;
+  exportedAt: string;
+  media?: TrackedMedia[];
+  settings?: BackupSettings;
+  notifications?: NotificationItem[];
+}
+
+export type StatusMode = 'all' | 'only' | 'except';
+
+export type MediaFieldGroup = 'progress' | 'watchLink' | 'poster' | 'tmdb' | 'notify' | 'alertHistory';
+
+/** Field groups a user can leave out of exported titles. Core fields (id, title, mediaType, status, createdAt, updatedAt) are always kept. */
+export const MEDIA_FIELD_GROUPS: { key: MediaFieldGroup; label: string; hint: string; fields: string[] }[] = [
+  { key: 'progress', label: 'Progress', hint: 'season, episode, minutes', fields: ['currentSeason', 'currentEpisode', 'currentMinutes'] },
+  { key: 'watchLink', label: 'Watch link', hint: 'where you watch it', fields: ['watchingUrl'] },
+  { key: 'poster', label: 'Poster', hint: 'poster image path', fields: ['posterPath'] },
+  { key: 'tmdb', label: 'TMDB details', hint: 'TMDB id, season and episode counts, runtime, year', fields: ['tmdbId', 'totalSeasons', 'totalEpisodes', 'runtimeMinutes', 'releaseYear'] },
+  { key: 'notify', label: 'Notify setting', hint: 'per-title notify on or off', fields: ['notify'] },
+  { key: 'alertHistory', label: 'Alert history', hint: 'when reminders and release alerts last ran', fields: ['lastActivityAt', 'lastRemindedAt', 'lastNotifiedSeason', 'lastNotifiedEpisode', 'awaitingRelease', 'lastReleaseNotifiedAt'] },
+];
+
+export interface MediaFilter {
+  types: TrackedMedia['mediaType'][];
+  statusMode: StatusMode;
+  /** Used when statusMode is 'only' (keep these) or 'except' (drop these). Ignored for 'all'. */
+  statuses: MediaStatus[];
+  /** Field groups left out of each title. Empty = all fields. */
+  excludeFields: MediaFieldGroup[];
+}
+
+export interface ExportChoice {
+  /** null leaves titles out of the file. */
+  media: MediaFilter | null;
+  settings: boolean;
+  notifications: boolean;
+}
+
+export interface ImportChoice {
+  media: boolean;
+  settings: boolean;
+  notifications: boolean;
+}
+
+export interface ImportResult {
+  media?: { added: number; updated: number; skipped: number };
+  settings?: AppSettings;
+  notificationsAdded?: number;
+}
+
+export const matchesMediaFilter = (item: TrackedMedia, filter: MediaFilter): boolean => {
+  if (!filter.types.includes(item.mediaType)) return false;
+  if (filter.statusMode === 'all') return true;
+  const listed = filter.statuses.includes(item.status);
+  return filter.statusMode === 'only' ? listed : !listed;
+};
+
+const isTheme = (value: unknown): value is Theme => value === 'light' || value === 'dark';
+
+export async function exportBackup(choice: ExportChoice): Promise<Backup> {
+  const backup: Backup = {
+    format: BACKUP_FORMAT,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+  };
+
+  if (choice.media) {
+    const filter = choice.media;
+    const dropped = MEDIA_FIELD_GROUPS.filter((g) => filter.excludeFields.includes(g.key)).flatMap(
+      (g) => g.fields
+    );
+    backup.media = (await getAllMedia())
+      .filter((item) => matchesMediaFilter(item, filter))
+      .map((item) => {
+        const copy: Record<string, unknown> = { ...item };
+        for (const key of dropped) delete copy[key];
+        return copy as unknown as TrackedMedia;
+      });
+  }
+  if (choice.settings) {
+    const { newSeasonCheckIntervalHours, reminderIntervalHours } = await getSettings();
+    const theme = isStorageAvailable()
+      ? (await browser.storage.local.get(THEME_STORAGE_KEY))[THEME_STORAGE_KEY]
+      : undefined;
+    backup.settings = {
+      newSeasonCheckIntervalHours,
+      reminderIntervalHours,
+      ...(isTheme(theme) ? { theme } : {}),
+    };
+  }
+  if (choice.notifications) {
+    backup.notifications = await getNotificationLog();
+  }
+  return backup;
+}
+
+/** A title from a file: progress and the watch link may be missing. */
+type ImportedMedia = Partial<TrackedMedia> &
+  Pick<TrackedMedia, 'id' | 'title' | 'mediaType' | 'status' | 'createdAt' | 'updatedAt'>;
+
+function isValidMedia(item: unknown): item is ImportedMedia {
+  const m = item as Record<string, unknown> | null;
+  if (!m || typeof m.id !== 'string' || !m.id) return false;
+  if (typeof m.title !== 'string' || !m.title.trim()) return false;
+  if (typeof m.createdAt !== 'number' || typeof m.updatedAt !== 'number') return false;
+  if (!VALID_STATUSES.includes(m.status as MediaStatus)) return false;
+  if (m.mediaType === 'show') {
+    return [m.currentSeason, m.currentEpisode].every((v) => v === undefined || Number.isInteger(v));
+  }
+  if (m.mediaType === 'movie') {
+    return m.currentMinutes === undefined || (typeof m.currentMinutes === 'number' && m.currentMinutes >= 0);
+  }
+  return false;
+}
+
+/** Fills what a file left out so a new title is complete. */
+function withDefaults(item: ImportedMedia): TrackedMedia {
+  const base = { watchingUrl: '', ...item };
+  if (item.mediaType === 'movie') return { currentMinutes: 0, ...base } as Movie;
+  const start = item.status === 'next' ? 0 : 1;
+  return { currentSeason: start, currentEpisode: start, ...base } as Show;
+}
+
+// Same title added twice through TMDB gets the same key even if the ids differ.
+const mediaKey = (m: Pick<TrackedMedia, 'id' | 'mediaType' | 'tmdbId'>): string =>
+  m.tmdbId ? `${m.mediaType}:${m.tmdbId}` : m.id;
+
+/** Never removes titles; when a title is in both, the newer copy wins field by field (fields missing from the file keep their value). */
+async function mergeMedia(items: unknown[]): Promise<NonNullable<ImportResult['media']>> {
+  const list = await getAllMedia();
+  const indexByKey = new Map(list.map((m, i) => [mediaKey(m), i]));
+  // A file exported without TMDB details has no tmdbId, so also match on id.
+  const indexById = new Map(list.map((m, i) => [m.id, i]));
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  for (const item of items) {
+    if (!isValidMedia(item)) {
+      skipped++;
+      continue;
+    }
+    const i = indexByKey.get(mediaKey(item)) ?? indexById.get(item.id);
+    if (i === undefined) {
+      indexByKey.set(mediaKey(item), list.length);
+      indexById.set(item.id, list.length);
+      list.push(withDefaults(item));
+      added++;
+    } else if (item.updatedAt > list[i].updatedAt) {
+      list[i] = { ...list[i], ...item } as TrackedMedia;
+      updated++;
+    }
+  }
+
+  if (added || updated) await setStorageData({ [STORAGE_KEY]: list });
+  return { added, updated, skipped };
+}
+
+const isValidInterval = (value: unknown): value is number =>
+  typeof value === 'number' && (value === -1 || value > 0);
+
+function isValidNotification(item: unknown): item is NotificationItem {
+  const n = item as Record<string, unknown> | null;
+  return (
+    !!n &&
+    typeof n.id === 'string' &&
+    typeof n.showId === 'string' &&
+    typeof n.title === 'string' &&
+    typeof n.message === 'string' &&
+    typeof n.timestamp === 'number' &&
+    typeof n.read === 'boolean'
+  );
+}
+
+/** Adds entries not already in the log, newest first. */
+async function mergeNotifications(items: unknown[]): Promise<number> {
+  const current = await getNotificationLog();
+  const ids = new Set(current.map((n) => n.id));
+  const added: NotificationItem[] = [];
+  for (const item of items) {
+    if (isValidNotification(item) && !ids.has(item.id)) {
+      ids.add(item.id);
+      added.push(item);
+    }
+  }
+  if (added.length) {
+    const merged = [...current, ...added].sort((a, b) => b.timestamp - a.timestamp);
+    await setStorageData({ [NOTIFICATIONS_STORAGE_KEY]: merged });
+  }
+  return added.length;
+}
+
+const isValidSettings = (s: BackupSettings | undefined): s is BackupSettings =>
+  !!s && isValidInterval(s.newSeasonCheckIntervalHours) && isValidInterval(s.reminderIntervalHours);
+
+/** Parses and checks a backup file. */
+export function parseBackup(json: string): Backup {
+  let parsed: Partial<Backup>;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error('This file is not valid JSON.');
+  }
+  if (parsed?.format !== BACKUP_FORMAT) {
+    throw new Error('This is not a Nyatching List backup file.');
+  }
+  if (!Array.isArray(parsed.media) && !isValidSettings(parsed.settings) && !Array.isArray(parsed.notifications)) {
+    throw new Error('This backup has nothing to import.');
+  }
+  return parsed as Backup;
+}
+
+/** Imports the picked parts the backup holds. Settings and theme are replaced; titles and notifications are merged. */
+export async function importBackup(backup: Backup, choice: ImportChoice): Promise<ImportResult> {
+  const result: ImportResult = {};
+
+  if (choice.media && Array.isArray(backup.media)) {
+    result.media = await mergeMedia(backup.media);
+  }
+
+  const s = backup.settings;
+  if (choice.settings && isValidSettings(s)) {
+    result.settings = await saveSettings({
+      newSeasonCheckIntervalHours: s.newSeasonCheckIntervalHours,
+      reminderIntervalHours: s.reminderIntervalHours,
+    });
+    if (isTheme(s.theme)) await setStorageData({ [THEME_STORAGE_KEY]: s.theme });
+  }
+
+  if (choice.notifications && Array.isArray(backup.notifications)) {
+    result.notificationsAdded = await mergeNotifications(backup.notifications);
+  }
+
+  if (!result.media && !result.settings && result.notificationsAdded === undefined) {
+    throw new Error('Nothing selected to import.');
+  }
+  return result;
+}
+
+// ==========================================
 // NOTIFICATION LOG STORAGE HELPERS
 // ==========================================
 

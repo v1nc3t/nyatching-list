@@ -40,6 +40,7 @@ Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 - **Notifications:** Desktop alerts when a new episode or season is out
 - **Dark / light theme:** Switch themes from the popup or dashboard
 - **Local storage:** Your list stays on your device
+- **Backup:** Export your list, settings, or notification history to JSON and import it back, from dashboard settings. Pick titles by type and status (all, only some, or all except some), leave out fields you don't need, and choose what to import
 
 ---
 
@@ -132,6 +133,8 @@ npm run build:firefox  # → build-firefox/
 
 - **Chrome:** run `npm run dev`, then load `build/` as an unpacked extension.
 - **Firefox:** run `npm run dev:firefox`, then load `build-firefox/manifest.json` from `about:debugging`. Firefox MV3 blocks scripts from localhost, so HMR is not available. Use watch mode and click **Reload** on the temporary add-on after changes.
+
+Local builds are named **nyatching-list (dev)** and use their own Firefox add-on ID, so they keep separate storage and can't touch the list in the store version. Removing a temporary add-on deletes the data stored under its ID, which is why a local build must never share the store ID. To test with your real list, export it from the store version and import it into the dev build. Only the release workflow builds with the store ID (`RELEASE_BUILD=true`).
 
 ### Firefox for Android
 

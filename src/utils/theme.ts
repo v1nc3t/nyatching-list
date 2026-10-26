@@ -1,8 +1,8 @@
 import { ref } from 'vue'
 import browser from 'webextension-polyfill'
+import { THEME_STORAGE_KEY } from '../storage'
 
 export type Theme = 'light' | 'dark'
-const THEME_STORAGE_KEY = 'nyatching_theme'
 
 /**
  * Applies CSS theme classes to the document element (<html>).

@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_TMDB_READ_TOKEN: ${{ secrets.VITE_TMDB_READ_TOKEN }}
+      # store add-on id and name; local builds use a separate dev id (see src/manifest.ts)
+      RELEASE_BUILD: 'true'
 
     steps:
       - name: Checkout

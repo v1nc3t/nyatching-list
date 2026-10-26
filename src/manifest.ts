@@ -3,8 +3,13 @@ import packageData from '../package.json' with { type: 'json' }
 
 const isFirefox = process.env.TARGET_BROWSER === 'firefox'
 
+// Only the release workflow builds with the store add-on id. Local builds get their own id
+// and storage: removing a temporary add-on in about:debugging deletes the stored data of
+// whatever id it used, so a local build must never share the store copy's id.
+const isRelease = process.env.RELEASE_BUILD === 'true'
+
 export default defineManifest({
-  name: packageData.name,
+  name: isRelease ? packageData.name : `${packageData.name} (dev)`,
   description: packageData.description,
   version: packageData.version,
   homepage_url: 'https://github.com/v1nc3t/nyatching-list',
@@ -46,7 +51,7 @@ export default defineManifest({
   ...(isFirefox && {
     browser_specific_settings: {
       gecko: {
-        id: 'nyatching-list@v1nc3t.github.io',
+        id: isRelease ? 'nyatching-list@v1nc3t.github.io' : 'nyatching-list-dev@v1nc3t.github.io',
         strict_min_version: '112.0',
         data_collection_permissions: {
           required: ['none'],
