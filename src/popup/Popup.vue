@@ -1152,10 +1152,6 @@ body::-webkit-scrollbar {
   height: 0;
 }
 
-.popup-root.is-adding .navbar {
-  padding: 0.55rem 0.75rem;
-}
-
 .popup-root.is-adding .content {
   padding: 0.45rem 0.75rem 0;
 }
