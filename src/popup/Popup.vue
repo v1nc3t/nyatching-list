@@ -694,7 +694,7 @@ const handleAddMediaSubmit = async () => {
     <!-- Add-media view -->
     <div v-else class="add-panel">
       <div class="add-panel-header">
-        <h4>Add Media</h4>
+        <h4>Add</h4>
         <div class="segmented" role="group" aria-label="Type">
           <button
             type="button"
@@ -828,7 +828,6 @@ const handleAddMediaSubmit = async () => {
         </div>
 
         <div class="field-section">
-          <p class="section-label">Progress</p>
 
           <template v-if="formType === 'show'">
             <div class="form-row">
@@ -1552,15 +1551,6 @@ body::-webkit-scrollbar {
   padding-top: 0.7rem;
   margin-top: 0.15rem;
   border-top: 1px solid var(--border);
-}
-
-.section-label {
-  margin: 0 0 0.32rem 0;
-  font-size: 0.62rem;
-  color: var(--text-muted);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
 .segmented {
