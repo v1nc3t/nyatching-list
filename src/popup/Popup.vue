@@ -622,7 +622,6 @@ const handleAddMediaSubmit = async () => {
           <img class="brand-logo" src="/img/logo-32.png" alt="" width="22" height="22" />
           <h1>NYATCHING LIST</h1>
         </button>
-        <p v-if="!isModalOpen" class="subtitle">List of tv shows and movies currently watching</p>
       </div>
 
       <div class="header-actions">
@@ -696,6 +695,24 @@ const handleAddMediaSubmit = async () => {
     <div v-else class="add-panel">
       <div class="add-panel-header">
         <h4>Add Media</h4>
+        <div class="segmented" role="group" aria-label="Type">
+          <button
+            type="button"
+            class="segment-btn"
+            :class="{ active: formType === 'show' }"
+            @click="setFormType('show')"
+          >
+            Show
+          </button>
+          <button
+            type="button"
+            class="segment-btn"
+            :class="{ active: formType === 'movie' }"
+            @click="setFormType('movie')"
+          >
+            Movie
+          </button>
+        </div>
         <button type="button" class="icon-btn" @click="closeModal" aria-label="Close">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
             <path
@@ -758,28 +775,6 @@ const handleAddMediaSubmit = async () => {
                 </span>
               </div>
             </div>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label id="type-label">Type</label>
-          <div class="segmented" role="group" aria-labelledby="type-label">
-            <button
-              type="button"
-              class="segment-btn"
-              :class="{ active: formType === 'show' }"
-              @click="setFormType('show')"
-            >
-              Show
-            </button>
-            <button
-              type="button"
-              class="segment-btn"
-              :class="{ active: formType === 'movie' }"
-              @click="setFormType('movie')"
-            >
-              Movie
-            </button>
           </div>
         </div>
 
@@ -1120,13 +1115,6 @@ body::-webkit-scrollbar {
   color: var(--accent-hover);
 }
 
-.subtitle {
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  margin: 0.2rem 0 0 0;
-  line-height: 1.3;
-}
-
 .icon-btn {
   position: relative;
   flex-shrink: 0;
@@ -1263,7 +1251,7 @@ body::-webkit-scrollbar {
 .add-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.5rem;
   margin-bottom: 0.4rem;
 }
 
@@ -1277,6 +1265,7 @@ body::-webkit-scrollbar {
 .add-panel-header .icon-btn {
   width: 1.75rem;
   height: 1.75rem;
+  margin-left: auto;
 }
 
 .imdb-auto-badge {
@@ -1565,13 +1554,13 @@ body::-webkit-scrollbar {
 
 .segmented {
   display: flex;
-  width: 100%;
+  width: 7.5rem;
   background: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
   border: none;
   border-radius: 8px;
   padding: 0.18rem;
   gap: 0.18rem;
-  height: 2.05rem;
+  height: 1.75rem;
   box-sizing: border-box;
   align-items: center;
 }
