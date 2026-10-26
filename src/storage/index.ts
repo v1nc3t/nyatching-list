@@ -303,6 +303,87 @@ export async function deleteMedia(id: string): Promise<void> {
 }
 
 // ==========================================
+// BACKUP (EXPORT / IMPORT)
+// ==========================================
+
+const BACKUP_FORMAT = 'nyatching-list-backup' as const;
+
+export interface Backup {
+  format: typeof BACKUP_FORMAT;
+  version: 1;
+  exportedAt: string;
+  media: TrackedMedia[];
+}
+
+export async function exportBackup(): Promise<Backup> {
+  return {
+    format: BACKUP_FORMAT,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    media: await getAllMedia(),
+  };
+}
+
+function isValidMedia(item: unknown): item is TrackedMedia {
+  const m = item as Record<string, unknown> | null;
+  if (!m || typeof m.id !== 'string' || !m.id) return false;
+  if (typeof m.title !== 'string' || !m.title.trim()) return false;
+  if (typeof m.createdAt !== 'number' || typeof m.updatedAt !== 'number') return false;
+  if (!VALID_STATUSES.includes(m.status as MediaStatus)) return false;
+  if (m.mediaType === 'show') {
+    return Number.isInteger(m.currentSeason) && Number.isInteger(m.currentEpisode);
+  }
+  if (m.mediaType === 'movie') {
+    return typeof m.currentMinutes === 'number' && m.currentMinutes >= 0;
+  }
+  return false;
+}
+
+// Same title added twice through TMDB gets the same key even if the ids differ.
+const mediaKey = (m: TrackedMedia): string =>
+  m.tmdbId ? `${m.mediaType}:${m.tmdbId}` : m.id;
+
+/** Merges a backup into the list. Never removes titles; when a title is in both, the newer copy wins. */
+export async function importBackup(
+  json: string
+): Promise<{ added: number; updated: number; skipped: number }> {
+  let parsed: Partial<Backup>;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error('This file is not valid JSON.');
+  }
+  if (parsed?.format !== BACKUP_FORMAT || !Array.isArray(parsed.media)) {
+    throw new Error('This is not a Nyatching List backup file.');
+  }
+
+  const list = await getAllMedia();
+  const indexByKey = new Map(list.map((m, i) => [mediaKey(m), i]));
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  for (const item of parsed.media) {
+    if (!isValidMedia(item)) {
+      skipped++;
+      continue;
+    }
+    const i = indexByKey.get(mediaKey(item));
+    if (i === undefined) {
+      indexByKey.set(mediaKey(item), list.length);
+      list.push(item);
+      added++;
+    } else if (item.updatedAt > list[i].updatedAt) {
+      list[i] = item;
+      updated++;
+    }
+  }
+
+  await setStorageData({ [STORAGE_KEY]: list });
+  return { added, updated, skipped };
+}
+
+// ==========================================
 // NOTIFICATION LOG STORAGE HELPERS
 // ==========================================
 

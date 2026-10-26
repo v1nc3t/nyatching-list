@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, onUnmounted } from 'vue'
 import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
-import { getSettings, saveSettings } from '../storage'
+import { exportBackup, getSettings, importBackup, saveSettings } from '../storage'
 import { scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
@@ -66,6 +66,43 @@ const selectInterval = (key: 'episode' | 'reminder', val: number) => {
   openMenu.value = null
 }
 
+const backupMessage = ref('')
+const importInput = ref<HTMLInputElement | null>(null)
+
+const handleExport = async () => {
+  try {
+    const backup = await exportBackup()
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `nyatching-list-backup-${backup.exportedAt.slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    // Firefox can cancel the download if the URL is revoked right away
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    backupMessage.value = `Exported ${backup.media.length} titles.`
+  } catch (error) {
+    console.error('[Nyatching List] Export failed:', error)
+    backupMessage.value = 'Export failed.'
+  }
+}
+
+const handleImportFile = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  try {
+    const { added, updated, skipped } = await importBackup(await file.text())
+    backupMessage.value =
+      `Imported: ${added} added, ${updated} updated` + (skipped ? `, ${skipped} skipped` : '') + '.'
+  } catch (error) {
+    backupMessage.value = (error as Error).message
+  }
+}
+
 const handleSave = async () => {
   isSaving.value = true
   try {
@@ -94,7 +131,7 @@ const handleSave = async () => {
   <div class="modal-overlay" @click.self="emit('close')">
     <div class="modal-card">
       <div class="modal-header">
-        <h4>Notifications</h4>
+        <h4>Settings</h4>
         <button type="button" class="close-btn" aria-label="Close settings" @click="emit('close')">✕</button>
       </div>
 
@@ -121,6 +158,26 @@ const handleSave = async () => {
               </label>
             </div>
           </div>
+        </div>
+
+        <div class="form-group">
+          <label>Backup</label>
+          <p class="form-hint">
+            Save your list to a file, or add titles from a backup. Import never removes titles. If a
+            title is in both, the newer copy is kept.
+          </p>
+          <div class="backup-actions">
+            <button type="button" class="secondary-btn" @click="handleExport">Export</button>
+            <button type="button" class="secondary-btn" @click="importInput?.click()">Import</button>
+            <input
+              ref="importInput"
+              type="file"
+              accept=".json,application/json"
+              hidden
+              @change="handleImportFile"
+            />
+          </div>
+          <p v-if="backupMessage" class="form-hint">{{ backupMessage }}</p>
         </div>
       </div>
 
@@ -304,6 +361,11 @@ const handleSave = async () => {
   background-color: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
+}
+
+.backup-actions {
+  display: flex;
+  gap: 0.65rem;
 }
 
 .modal-actions {

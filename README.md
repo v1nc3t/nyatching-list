@@ -40,6 +40,7 @@ Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 - **Notifications:** Desktop alerts when a new episode or season is out
 - **Dark / light theme:** Switch themes from the popup or dashboard
 - **Local storage:** Your list stays on your device
+- **Backup:** Export your list to a file and import it back from dashboard settings
 
 ---
 
