@@ -1045,10 +1045,13 @@ body::-webkit-scrollbar {
 
 <style scoped>
 .popup-root {
+  /* Same height in both views so Firefox never resizes the popup window */
+  --popup-height: 31.5rem;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   width: 100%;
+  height: var(--popup-height);
   min-height: 100%;
   padding: 0;
   background-color: var(--bg);
@@ -1139,6 +1142,15 @@ body::-webkit-scrollbar {
 .content {
   padding: 0.75rem 0.85rem 0.1rem;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.content::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .popup-root.is-adding .navbar {
@@ -1146,7 +1158,6 @@ body::-webkit-scrollbar {
 }
 
 .popup-root.is-adding .content {
-  flex: none;
   padding: 0.45rem 0.75rem 0;
 }
 
@@ -1642,6 +1653,7 @@ body::-webkit-scrollbar {
 
 @media (min-width: 321px) {
   .popup-root {
+    height: auto;
     min-height: 100dvh;
     max-width: 28rem;
     margin: 0 auto;
