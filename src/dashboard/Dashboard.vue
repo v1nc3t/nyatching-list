@@ -111,6 +111,21 @@ const toggleSelect = (key: string) => {
   openSelectKey.value = openSelectKey.value === key ? null : key
 }
 
+// Touched cards keep their pre-update sort slot until the user clicks outside all cards,
+// so nothing moves under the pointer
+const held = ref(new Map<string, { status: MediaStatus; at: number }>())
+
+const holdCard = (item: TrackedMedia) => {
+  if (!held.value.has(item.id)) {
+    held.value.set(item.id, { status: item.status, at: item.lastActivityAt ?? item.updatedAt })
+  }
+}
+
+const releaseCard = (event: Event) => {
+  if (event.target instanceof Element && event.target.closest('.media-card')) return
+  if (held.value.size) held.value = new Map()
+}
+
 onMounted(() => {
   loadMedia().then(() => {
     syncReleasedEpisodeCaps().catch(() => {})
@@ -134,10 +149,14 @@ onMounted(() => {
   }
 
   document.addEventListener('click', closeSelects)
+  document.addEventListener('pointerdown', releaseCard)
+  document.addEventListener('focusin', releaseCard)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeSelects)
+  document.removeEventListener('pointerdown', releaseCard)
+  document.removeEventListener('focusin', releaseCard)
 })
 
 // Unread Notification Count
@@ -182,17 +201,21 @@ const stats = computed(() => {
 
 // Filtering & Sorting
 const filteredMedia = computed(() => {
+  const hold = held.value
+  const statusOf = (item: TrackedMedia) => hold.get(item.id)?.status ?? item.status
+  const activityOf = (item: TrackedMedia) =>
+    hold.get(item.id)?.at ?? item.lastActivityAt ?? item.updatedAt
+
   return mediaList.value
     .filter((item) => {
       const matchesSearch = item.title.toLowerCase().includes(search.value.toLowerCase().trim())
-      const matchesStatus = statusFilter.value === 'all' || item.status === statusFilter.value
+      const matchesStatus = statusFilter.value === 'all' || statusOf(item) === statusFilter.value
       const matchesType = typeFilter.value === 'all' || item.mediaType === typeFilter.value
       return matchesSearch && matchesStatus && matchesType
     })
     .sort(
       (a, b) =>
-        STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-        (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt),
+        STATUS_RANK[statusOf(a)] - STATUS_RANK[statusOf(b)] || activityOf(b) - activityOf(a),
     )
 })
 
@@ -634,8 +657,24 @@ const stopTitleMarquee = (event: Event) => {
         <p v-else>Use the popup extension menu to add your first show or movie!</p>
       </div>
 
-      <div v-else class="media-grid" :class="{ 'is-list': viewMode === 'list' }">
-        <article v-for="item in filteredMedia" :key="item.id" class="media-card" :class="{ 'is-select-open': openSelectKey === item.id }">
+      <!-- css=false: moves still animate; cards enter/leave instantly. key: no slide on view switch -->
+      <TransitionGroup
+        v-else
+        :key="viewMode"
+        tag="div"
+        name="card"
+        :css="false"
+        class="media-grid"
+        :class="{ 'is-list': viewMode === 'list' }"
+      >
+        <article
+          v-for="item in filteredMedia"
+          :key="item.id"
+          class="media-card"
+          :class="{ 'is-select-open': openSelectKey === item.id }"
+          @pointerdown="holdCard(item)"
+          @focusin="holdCard(item)"
+        >
           <div class="card-top">
             <button class="delete-btn" title="Delete" @click="handleDelete(item.id)">
               <svg viewBox="0 0 24 24" width="18" height="18">
@@ -833,7 +872,7 @@ const stopTitleMarquee = (event: Event) => {
             </div>
           </div>
         </article>
-      </div>
+      </TransitionGroup>
     </main>
 
     <!-- Footer -->
@@ -1294,6 +1333,17 @@ html, body {
 .media-card.is-select-open {
   border-color: var(--accent);
   z-index: 10;
+}
+
+/* Slide a released card into its new slot */
+.media-card.card-move {
+  transition: transform 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-card.card-move {
+    transition: none;
+  }
 }
 
 .media-grid.is-list {
