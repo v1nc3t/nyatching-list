@@ -14,6 +14,7 @@
   --accent-hover: #cfcabf;
   --accent-contrast: #000;
   --accent-soft: color-mix(in srgb, var(--ink) 10%, transparent);
+  --green: #00b273; /* logo green */
   --danger: var(--ink);
   --error-bg: #141311;
   --error-text: var(--ink);
@@ -38,6 +39,7 @@
   --accent-hover: #3a3834;
   --accent-contrast: #e6e2da;
   --accent-soft: color-mix(in srgb, var(--ink) 8%, transparent);
+  --green: #007a4f; /* logo green, darkened for contrast on light */
   --danger: var(--ink);
   --error-bg: #e7e3db;
   --error-text: var(--ink);
@@ -62,10 +64,10 @@ h1,
 .count-label,
 .progress-label,
 .status-label,
-.section-label,
 .form-group label,
 .notif-time,
-.footer-link {
+.footer-link,
+.footer-copy {
   font-family: var(--font-mono);
 }
 

@@ -57,7 +57,8 @@ const STATUS_RANK: Record<MediaStatus, number> = {
 }
 const typeFilter = ref<'all' | 'show' | 'movie'>('all')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
-const supportLink = ref('https://buymeacoffee.com/v1c3nt')
+const supportLink = ref('https://ko-fi.com/v1nc3t')
+const year = new Date().getFullYear()
 const showInfoCache = new Map<number, TMDBShowInfo>()
 
 const loadShowInfo = async (tmdbId: number): Promise<TMDBShowInfo | null> => {
@@ -110,6 +111,21 @@ const toggleSelect = (key: string) => {
   openSelectKey.value = openSelectKey.value === key ? null : key
 }
 
+// Touched cards keep their pre-update sort slot until the user clicks outside all cards,
+// so nothing moves under the pointer
+const held = ref(new Map<string, { status: MediaStatus; at: number }>())
+
+const holdCard = (item: TrackedMedia) => {
+  if (!held.value.has(item.id)) {
+    held.value.set(item.id, { status: item.status, at: item.lastActivityAt ?? item.updatedAt })
+  }
+}
+
+const releaseCard = (event: Event) => {
+  if (event.target instanceof Element && event.target.closest('.media-card')) return
+  if (held.value.size) held.value = new Map()
+}
+
 onMounted(() => {
   loadMedia().then(() => {
     syncReleasedEpisodeCaps().catch(() => {})
@@ -133,10 +149,14 @@ onMounted(() => {
   }
 
   document.addEventListener('click', closeSelects)
+  document.addEventListener('pointerdown', releaseCard)
+  document.addEventListener('focusin', releaseCard)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeSelects)
+  document.removeEventListener('pointerdown', releaseCard)
+  document.removeEventListener('focusin', releaseCard)
 })
 
 // Unread Notification Count
@@ -181,17 +201,21 @@ const stats = computed(() => {
 
 // Filtering & Sorting
 const filteredMedia = computed(() => {
+  const hold = held.value
+  const statusOf = (item: TrackedMedia) => hold.get(item.id)?.status ?? item.status
+  const activityOf = (item: TrackedMedia) =>
+    hold.get(item.id)?.at ?? item.lastActivityAt ?? item.updatedAt
+
   return mediaList.value
     .filter((item) => {
       const matchesSearch = item.title.toLowerCase().includes(search.value.toLowerCase().trim())
-      const matchesStatus = statusFilter.value === 'all' || item.status === statusFilter.value
+      const matchesStatus = statusFilter.value === 'all' || statusOf(item) === statusFilter.value
       const matchesType = typeFilter.value === 'all' || item.mediaType === typeFilter.value
       return matchesSearch && matchesStatus && matchesType
     })
     .sort(
       (a, b) =>
-        STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-        (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt),
+        STATUS_RANK[statusOf(a)] - STATUS_RANK[statusOf(b)] || activityOf(b) - activityOf(a),
     )
 })
 
@@ -633,8 +657,24 @@ const stopTitleMarquee = (event: Event) => {
         <p v-else>Use the popup extension menu to add your first show or movie!</p>
       </div>
 
-      <div v-else class="media-grid" :class="{ 'is-list': viewMode === 'list' }">
-        <article v-for="item in filteredMedia" :key="item.id" class="media-card" :class="{ 'is-select-open': openSelectKey === item.id }">
+      <!-- css=false: moves still animate; cards enter/leave instantly. key: no slide on view switch -->
+      <TransitionGroup
+        v-else
+        :key="viewMode"
+        tag="div"
+        name="card"
+        :css="false"
+        class="media-grid"
+        :class="{ 'is-list': viewMode === 'list' }"
+      >
+        <article
+          v-for="item in filteredMedia"
+          :key="item.id"
+          class="media-card"
+          :class="{ 'is-select-open': openSelectKey === item.id }"
+          @pointerdown="holdCard(item)"
+          @focusin="holdCard(item)"
+        >
           <div class="card-top">
             <button class="delete-btn" title="Delete" @click="handleDelete(item.id)">
               <svg viewBox="0 0 24 24" width="18" height="18">
@@ -726,7 +766,7 @@ const stopTitleMarquee = (event: Event) => {
           <div class="card-bottom">
             <!-- TV Show Progress Controls -->
             <div v-if="isShow(item)" class="progress-container">
-              <div class="progress-box">
+              <div class="progress-box season-box">
                 <div class="progress-info">
                   <span class="progress-label">Season</span>
                   <span class="progress-val">
@@ -744,7 +784,7 @@ const stopTitleMarquee = (event: Event) => {
                 </div>
               </div>
 
-              <div class="progress-box">
+              <div class="progress-box episode-box">
                 <div class="progress-info">
                   <span class="progress-label">Episode</span>
                   <span class="progress-val">
@@ -765,7 +805,7 @@ const stopTitleMarquee = (event: Event) => {
 
             <!-- Movie Progress Controls -->
             <div v-else-if="isMovie(item)" class="progress-container">
-              <div class="progress-box scrollable-input-box">
+              <div class="progress-box scrollable-input-box minutes-box">
                 <div class="progress-info">
                   <span class="progress-label">Minutes Watched</span>
                 </div>
@@ -832,17 +872,19 @@ const stopTitleMarquee = (event: Event) => {
             </div>
           </div>
         </article>
-      </div>
+      </TransitionGroup>
     </main>
 
     <!-- Footer -->
     <footer class="site-footer">
+      <span class="footer-copy">© {{ year }} v1nc3t</span>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        created by v1nc3t
+        source
       </a>
       <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        support v1nc3t
+        support
       </a>
     </footer>
   </div>
@@ -1293,18 +1335,32 @@ html, body {
   z-index: 10;
 }
 
+/* Slide a released card into its new slot */
+.media-card.card-move {
+  transition: transform 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-card.card-move {
+    transition: none;
+  }
+}
+
 .media-grid.is-list {
-  grid-template-columns: 1fr;
-  gap: 0.45rem;
+  /* auto, not 42px: the card's padding is added to the edge tracks */
+  grid-template-columns: auto minmax(0, 1fr) auto auto 8rem auto;
+  column-gap: 0.85rem;
+  row-gap: 0.45rem;
   container: media-list / inline-size;
 }
 
+/* Rows share the list's column tracks so every column lines up */
 .media-grid.is-list .media-card {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto 8rem auto;
-  grid-template-areas: "poster title progress status delete";
+  grid-template-columns: subgrid;
+  grid-template-areas: "poster title season episode status delete";
   align-items: center;
-  column-gap: 0.85rem;
   padding: 0.5rem 0.7rem;
 }
 
@@ -1341,20 +1397,31 @@ html, body {
 }
 
 .media-grid.is-list .progress-container {
-  grid-area: progress;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 1.15rem;
-  min-width: 0;
+  display: contents;
+}
+
+.media-grid.is-list .season-box {
+  grid-area: season;
+}
+
+.media-grid.is-list .episode-box {
+  grid-area: episode;
+}
+
+.media-grid.is-list .minutes-box {
+  grid-column: season-start / episode-end;
 }
 
 .media-grid.is-list .progress-box {
   flex: 0 0 auto;
-  justify-content: flex-start;
+  justify-content: space-between;
   background: transparent;
   padding: 0;
   gap: 0.45rem;
+}
+
+.media-grid.is-list .progress-val {
+  font-variant-numeric: tabular-nums;
 }
 
 .media-grid.is-list .progress-info {
@@ -1393,6 +1460,9 @@ html, body {
 .media-grid.is-list .title-actions .type-badge {
   padding: 0.12rem 0.4rem;
   font-weight: 700;
+  /* fits "movie", so edit link and notify line up across rows */
+  box-sizing: content-box;
+  min-width: 5.5ch;
 }
 
 .media-grid:not(.is-list) .card-top {
@@ -1416,7 +1486,21 @@ html, body {
       "poster title delete"
       "progress progress progress"
       "status status status";
+    column-gap: 0.85rem;
     row-gap: 0.45rem;
+  }
+
+  .media-grid.is-list .progress-container {
+    grid-area: progress;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 1.15rem;
+    min-width: 0;
+  }
+
+  .media-grid.is-list .progress-box {
+    justify-content: flex-start;
   }
 
   .media-grid.is-list .status-row-box {
@@ -1896,6 +1980,11 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
+}
+
+.footer-copy {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .footer-link {

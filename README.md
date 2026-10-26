@@ -71,7 +71,7 @@ Open the dashboard from the popup to:
 
 ### Notifications
 
-Waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. A next up show sends one alert when episodes start airing, not one per episode. Watching shows and movies with **Notify** on can send a reminder after they go unchanged for the interval set in settings. At most 2 episode alerts and 2 reminders are sent per day. Click a toast to open your watching link, or the dashboard if none is set. Completed and dropped titles are not notified.
+Waiting shows with **Notify** on can send a desktop alert when TMDB has a new episode or season. A waiting show with a new episode moves to watching. With **Notify** off, this happens without an alert. A next up show sends one alert when episodes start airing, not one per episode. Watching shows and movies with **Notify** on can send a reminder after they go unchanged for the interval set in settings. At most 2 episode alerts and 2 reminders are sent per day. Click a toast to open your watching link, or the dashboard if none is set. Completed and dropped titles are not notified.
 
 Checks run at **12:00 PM**. If the browser was closed at that time, the check runs when it next opens.
 

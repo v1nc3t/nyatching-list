@@ -35,8 +35,10 @@ const mediaCount = ref(0)
 const isModalOpen = ref(false)
 const errorMessage = ref('')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
-const supportLink = ref('https://buymeacoffee.com/v1c3nt')
+const supportLink = ref('https://ko-fi.com/v1nc3t')
+const year = new Date().getFullYear()
 const isImdbPage = ref(false)
+const imdbInList = ref(false)
 
 // Form State
 const formType = ref<'show' | 'movie'>('show')
@@ -64,8 +66,8 @@ const suggestionsEl = ref<HTMLElement | null>(null)
 const isSelectingSuggestion = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout>
 
-// Auto-detect Active Tab if on IMDb Title Page
-const detectImdbActiveTab = async (autoOpenModal = true) => {
+// Prefill the form from the active IMDb title page; the user opens the form themselves
+const detectImdbActiveTab = async () => {
   try {
     const tabs = await browser.tabs.query({ active: true, currentWindow: true })
     const tab = tabs[0] ?? (await browser.tabs.query({ active: true }))[0]
@@ -90,7 +92,8 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
         )
 
         if (exists) {
-          errorMessage.value = 'Item is already in your watchlist'
+          // No banner: it arrived after the popup opened, resized it, and Firefox painted it glitched
+          imdbInList.value = true
           isModalOpen.value = false
           return
         }
@@ -114,12 +117,9 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
           applyShowProgressFromTmdb()
         } else if (tmdbData.mediaType === 'movie' && tmdbData.runtimeMinutes) {
           formRuntimeMinutes.value = tmdbData.runtimeMinutes.toString()
-          applyCompletedProgress()
+          applyLatestProgress()
         }
 
-        if (autoOpenModal) {
-          isModalOpen.value = true
-        }
       }
     } else {
       isImdbPage.value = false
@@ -131,8 +131,12 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
 
 let skipProgressStatus = false
 
-const applyCompletedProgress = () => {
-  if (formStatus.value !== 'completed') return
+// Completed jumps to the end; waiting (shows only) jumps to the latest aired episode
+const applyLatestProgress = () => {
+  const waitingShow = formStatus.value === 'waiting' && formType.value === 'show'
+  if (formStatus.value !== 'completed' && !waitingShow) return
+  // Nothing aired yet, so a waiting show has no latest episode to jump to
+  if (waitingShow && tmdbShowInfo.value && !tmdbShowInfo.value.latestAired) return
   if (formType.value === 'show') {
     skipProgressStatus = true
     void nextTick(() => {
@@ -173,8 +177,8 @@ const applyShowProgressFromTmdb = () => {
 
   formTotalSeasons.value = info.totalSeasons.toString()
 
-  if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+  if (formStatus.value === 'completed' || (formStatus.value === 'waiting' && info.latestAired)) {
+    applyLatestProgress()
     return
   }
 
@@ -242,8 +246,8 @@ watch(formTotalEpisodes, () => {
 })
 
 watch(formType, () => {
-  if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+  if (formStatus.value === 'completed' || formStatus.value === 'waiting') {
+    applyLatestProgress()
   }
 })
 
@@ -303,13 +307,14 @@ const setFormType = (nextType: 'show' | 'movie') => {
   }
 
   if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+    applyLatestProgress()
   }
 }
 
+// Completed only: a season change updates Released Episodes, so waiting would snap the season back
 watch([formTotalSeasons, formTotalEpisodes, formRuntimeMinutes], () => {
   if (formStatus.value === 'completed') {
-    applyCompletedProgress()
+    applyLatestProgress()
   }
 })
 
@@ -381,7 +386,7 @@ const selectSuggestion = async (item: TMDBSuggestion) => {
     tmdbShowInfo.value = null
     const details = await getTMDBDetails(item.id, 'movie')
     formRuntimeMinutes.value = details?.runtime ? details.runtime.toString() : ''
-    applyCompletedProgress()
+    applyLatestProgress()
   }
 }
 
@@ -403,7 +408,7 @@ const closeStatusSelect = (event: MouseEvent) => {
 
 onMounted(() => {
   refreshCount()
-  detectImdbActiveTab(true)
+  detectImdbActiveTab()
   onMediaStorageChange((updatedList) => {
     mediaCount.value = updatedList.length
   })
@@ -437,20 +442,18 @@ const closeModal = () => {
   errorMessage.value = ''
 }
 
-const openModal = () => {
+const openModal = async () => {
   errorMessage.value = ''
-  if (isImdbPage.value) {
-    detectImdbActiveTab(true)
-  } else {
-    isModalOpen.value = true
-  }
+  // Closing the form clears the prefill, so fetch it again
+  if (isImdbPage.value && selectedTmdbId.value === undefined) await detectImdbActiveTab()
+  if (!imdbInList.value) isModalOpen.value = true
 }
 
 const setStatus = (status: MediaStatus) => {
   formStatus.value = status
   isStatusOpen.value = false
   if (status === 'completed') {
-    applyCompletedProgress()
+    applyLatestProgress()
     return
   }
   if (status === 'next') {
@@ -461,6 +464,8 @@ const setStatus = (status: MediaStatus) => {
     })
     return
   }
+  // Jumps a show to the latest episode; the clamp below covers anything it leaves under 1
+  if (status === 'waiting') applyLatestProgress()
   if (formSeason.value < 1 || formEpisode.value < 1) {
     skipProgressStatus = true
     void nextTick(() => {
@@ -619,7 +624,6 @@ const handleAddMediaSubmit = async () => {
           <img class="brand-logo" src="/img/logo-32.png" alt="" width="22" height="22" />
           <h1>NYATCHING LIST</h1>
         </button>
-        <p v-if="!isModalOpen" class="subtitle">List of tv shows and movies currently watching</p>
       </div>
 
       <div class="header-actions">
@@ -673,26 +677,44 @@ const handleAddMediaSubmit = async () => {
     </header>
 
     <div class="content">
-      <!-- Global/Context Banner for duplicate notification -->
-      <div v-if="errorMessage && !isModalOpen" class="error-banner">
-        {{ errorMessage }}
-      </div>
-
       <!-- Summary view -->
       <div v-if="!isModalOpen" class="count-card accent">
         <div class="count-display">
           <span class="count-label">Media in Watchlist</span>
           <span class="count-number">{{ mediaCount }}</span>
         </div>
-        <button class="primary-btn" @click="openModal">
-          {{ isImdbPage ? '+ from IMDb' : '+ Media' }}
+        <button
+          class="primary-btn"
+          :disabled="imdbInList"
+          :title="imdbInList ? 'Already in your watchlist' : undefined"
+          @click="openModal"
+        >
+          {{ imdbInList ? 'In watchlist' : isImdbPage ? '+ from IMDb' : '+ Media' }}
         </button>
       </div>
 
     <!-- Add-media view -->
     <div v-else class="add-panel">
       <div class="add-panel-header">
-        <h4>Add Media</h4>
+        <h4>Add</h4>
+        <div class="segmented" role="group" aria-label="Type">
+          <button
+            type="button"
+            class="segment-btn"
+            :class="{ active: formType === 'show' }"
+            @click="setFormType('show')"
+          >
+            Show
+          </button>
+          <button
+            type="button"
+            class="segment-btn"
+            :class="{ active: formType === 'movie' }"
+            @click="setFormType('movie')"
+          >
+            Movie
+          </button>
+        </div>
         <button type="button" class="icon-btn" @click="closeModal" aria-label="Close">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
             <path
@@ -759,28 +781,6 @@ const handleAddMediaSubmit = async () => {
         </div>
 
         <div class="form-group">
-          <label id="type-label">Type</label>
-          <div class="segmented" role="group" aria-labelledby="type-label">
-            <button
-              type="button"
-              class="segment-btn"
-              :class="{ active: formType === 'show' }"
-              @click="setFormType('show')"
-            >
-              Show
-            </button>
-            <button
-              type="button"
-              class="segment-btn"
-              :class="{ active: formType === 'movie' }"
-              @click="setFormType('movie')"
-            >
-              Movie
-            </button>
-          </div>
-        </div>
-
-        <div class="form-group">
           <label for="url-input">Watching URL</label>
           <input
             id="url-input"
@@ -830,7 +830,6 @@ const handleAddMediaSubmit = async () => {
         </div>
 
         <div class="field-section">
-          <p class="section-label">Progress</p>
 
           <template v-if="formType === 'show'">
             <div class="form-row">
@@ -1000,12 +999,14 @@ const handleAddMediaSubmit = async () => {
 
     <!-- Footer -->
     <footer class="site-footer">
+      <span class="footer-copy">© {{ year }} v1nc3t</span>
+      <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        created by v1nc3t
+        source
       </a>
       <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">
-        support v1nc3t
+        support
       </a>
     </footer>
   </main>
@@ -1045,10 +1046,13 @@ body::-webkit-scrollbar {
 
 <style scoped>
 .popup-root {
+  /* Same height in both views so Firefox never resizes the popup window */
+  --popup-height: 31.5rem;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   width: 100%;
+  height: var(--popup-height);
   min-height: 100%;
   padding: 0;
   background-color: var(--bg);
@@ -1115,13 +1119,6 @@ body::-webkit-scrollbar {
   color: var(--accent-hover);
 }
 
-.subtitle {
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  margin: 0.2rem 0 0 0;
-  line-height: 1.3;
-}
-
 .icon-btn {
   position: relative;
   flex-shrink: 0;
@@ -1146,14 +1143,18 @@ body::-webkit-scrollbar {
 .content {
   padding: 0.75rem 0.85rem 0.1rem;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
-.popup-root.is-adding .navbar {
-  padding: 0.55rem 0.75rem;
+.content::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .popup-root.is-adding .content {
-  flex: none;
   padding: 0.45rem 0.75rem 0;
 }
 
@@ -1223,9 +1224,14 @@ body::-webkit-scrollbar {
   border: none;
 }
 
-.primary-btn:hover {
+.primary-btn:hover:not(:disabled) {
   background-color: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .secondary-btn {
@@ -1253,7 +1259,7 @@ body::-webkit-scrollbar {
 .add-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.5rem;
   margin-bottom: 0.4rem;
 }
 
@@ -1267,14 +1273,15 @@ body::-webkit-scrollbar {
 .add-panel-header .icon-btn {
   width: 1.75rem;
   height: 1.75rem;
+  margin-left: auto;
 }
 
 .imdb-auto-badge {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
   border: none;
   padding: 0.28rem 0.5rem;
   border-radius: 8px;
@@ -1544,24 +1551,15 @@ body::-webkit-scrollbar {
   border-top: 1px solid var(--border);
 }
 
-.section-label {
-  margin: 0 0 0.32rem 0;
-  font-size: 0.62rem;
-  color: var(--text-muted);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
 .segmented {
   display: flex;
-  width: 100%;
+  width: 7.5rem;
   background: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
   border: none;
   border-radius: 8px;
   padding: 0.18rem;
   gap: 0.18rem;
-  height: 2.05rem;
+  height: 1.75rem;
   box-sizing: border-box;
   align-items: center;
 }
@@ -1618,6 +1616,11 @@ body::-webkit-scrollbar {
   flex-shrink: 0;
 }
 
+.footer-copy {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .footer-link {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -1638,6 +1641,7 @@ body::-webkit-scrollbar {
 
 @media (min-width: 321px) {
   .popup-root {
+    height: auto;
     min-height: 100dvh;
     max-width: 28rem;
     margin: 0 auto;
