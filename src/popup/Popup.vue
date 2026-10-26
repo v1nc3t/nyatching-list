@@ -775,18 +775,15 @@ const handleAddMediaSubmit = async () => {
         </div>
 
         <section v-if="mediaCount > 0" class="quick" aria-label="Quick progress">
-          <input
-            v-model="quickQuery"
-            type="search"
-            class="quick-search"
-            placeholder="Search your list"
-            aria-label="Search your list"
-            autocomplete="off"
-          />
-          <div class="quick-head">
-            <span class="quick-label">
-              {{ quickQuery.trim() ? `${quickList.length} found` : 'Recent' }}
-            </span>
+          <div class="quick-bar">
+            <input
+              v-model="quickQuery"
+              type="search"
+              class="quick-search"
+              placeholder="Search your list"
+              aria-label="Search your list"
+              autocomplete="off"
+            />
             <div class="select quick-filter" :class="{ 'is-open': isQuickFilterOpen }">
               <div
                 class="selected"
@@ -818,6 +815,9 @@ const handleAddMediaSubmit = async () => {
               </div>
             </div>
           </div>
+          <span class="quick-label">
+            {{ quickQuery.trim() ? `${quickList.length} found` : 'Recent' }}
+          </span>
           <ul v-if="quickList.length" class="quick-list">
             <li v-for="item in quickList" :key="item.id" class="quick-row">
               <img
@@ -1355,14 +1355,22 @@ body::-webkit-scrollbar {
   min-height: 0;
 }
 
+.quick-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .quick-search {
-  width: 100%;
-  padding: 0.4rem 0.55rem;
+  flex: 1;
+  min-width: 0;
+  height: 1.7rem;
+  padding: 0 0.5rem;
   border: none;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-family: inherit;
 }
 
@@ -1375,15 +1383,8 @@ body::-webkit-scrollbar {
   border-color: var(--accent);
 }
 
-.quick-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 0.15rem;
-}
-
 .quick-label {
+  margin-top: 0.15rem;
   font-family: var(--font-mono);
   font-size: 0.62rem;
   font-weight: 700;
@@ -1393,12 +1394,14 @@ body::-webkit-scrollbar {
 
 /* .select sets width: 100% later in the file */
 .select.quick-filter {
-  width: 7rem;
+  flex-shrink: 0;
+  width: 6.5rem;
   z-index: 50;
 }
 
 .quick-filter .selected {
-  padding: 0.22rem 0.5rem;
+  height: 1.7rem;
+  padding: 0 0.5rem;
   font-size: 0.72rem;
 }
 
