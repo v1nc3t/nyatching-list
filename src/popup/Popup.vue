@@ -66,8 +66,8 @@ const suggestionsEl = ref<HTMLElement | null>(null)
 const isSelectingSuggestion = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout>
 
-// Auto-detect Active Tab if on IMDb Title Page
-const detectImdbActiveTab = async (autoOpenModal = true) => {
+// Prefill the form from the active IMDb title page; the user opens the form themselves
+const detectImdbActiveTab = async () => {
   try {
     const tabs = await browser.tabs.query({ active: true, currentWindow: true })
     const tab = tabs[0] ?? (await browser.tabs.query({ active: true }))[0]
@@ -120,9 +120,6 @@ const detectImdbActiveTab = async (autoOpenModal = true) => {
           applyLatestProgress()
         }
 
-        if (autoOpenModal) {
-          isModalOpen.value = true
-        }
       }
     } else {
       isImdbPage.value = false
@@ -411,7 +408,7 @@ const closeStatusSelect = (event: MouseEvent) => {
 
 onMounted(() => {
   refreshCount()
-  detectImdbActiveTab(true)
+  detectImdbActiveTab()
   onMediaStorageChange((updatedList) => {
     mediaCount.value = updatedList.length
   })
@@ -445,13 +442,11 @@ const closeModal = () => {
   errorMessage.value = ''
 }
 
-const openModal = () => {
+const openModal = async () => {
   errorMessage.value = ''
-  if (isImdbPage.value) {
-    detectImdbActiveTab(true)
-  } else {
-    isModalOpen.value = true
-  }
+  // Closing the form clears the prefill, so fetch it again
+  if (isImdbPage.value && selectedTmdbId.value === undefined) await detectImdbActiveTab()
+  if (!imdbInList.value) isModalOpen.value = true
 }
 
 const setStatus = (status: MediaStatus) => {
