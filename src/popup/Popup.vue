@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import browser from 'webextension-polyfill'
-import { MediaStatus } from '../types'
+import { MediaStatus, TrackedMedia, isShow } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
 import { useTheme } from '../utils/theme'
 import {
@@ -15,6 +15,7 @@ import {
   TMDBSuggestion,
   TMDBShowInfo,
 } from '../services/tmdb'
+import { stepEpisode, stepMinutes } from '../services/progress'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -31,7 +32,8 @@ const openDashboard = async () => {
 }
 
 // State
-const mediaCount = ref(0)
+const allMedia = ref<TrackedMedia[]>([])
+const mediaCount = computed(() => allMedia.value.length)
 const isModalOpen = ref(false)
 const errorMessage = ref('')
 const githubLink = ref('https://github.com/v1nc3t/nyatching-list')
@@ -396,27 +398,105 @@ const handleBlur = () => {
   }, 200)
 }
 
-const refreshCount = async () => {
-  const media = await getAllMedia()
-  mediaCount.value = media.length
+// Quick list: the most recent items in the chosen status, or search results within it
+const RECENT_LIMIT = 4
+const MOVIE_STEP_MINUTES = 10
+const QUICK_FILTER_KEY = 'nyatching_popup_filter'
+type QuickFilter = MediaStatus | 'all'
+const QUICK_FILTERS: QuickFilter[] = ['all', 'watching', 'waiting', 'next', 'completed', 'dropped']
+const quickQuery = ref('')
+const quickFilter = ref<QuickFilter>('watching')
+const isQuickFilterOpen = ref(false)
+const failedPosters = ref<Record<string, boolean>>({})
+
+const loadQuickFilter = async () => {
+  try {
+    const saved = (await browser.storage.local.get(QUICK_FILTER_KEY))[QUICK_FILTER_KEY]
+    if (QUICK_FILTERS.includes(saved as QuickFilter)) quickFilter.value = saved as QuickFilter
+  } catch {
+    // Keep the default
+  }
 }
 
-const closeStatusSelect = (event: MouseEvent) => {
+const setQuickFilter = (filter: QuickFilter) => {
+  quickFilter.value = filter
+  isQuickFilterOpen.value = false
+  browser.storage.local.set({ [QUICK_FILTER_KEY]: filter }).catch(() => {})
+}
+
+const formatFilter = (filter: QuickFilter) => (filter === 'all' ? 'All' : formatStatus(filter))
+
+// Order and the status filter use values from when the popup opened,
+// so a row never jumps or disappears right after a +/- click
+const frozen = new Map<string, { status: MediaStatus; at: number }>()
+
+const setMedia = (list: TrackedMedia[]) => {
+  for (const item of list) {
+    if (!frozen.has(item.id)) {
+      frozen.set(item.id, { status: item.status, at: item.lastActivityAt ?? item.updatedAt })
+    }
+  }
+  allMedia.value = list
+}
+
+const quickList = computed(() => {
+  const q = quickQuery.value.trim().toLowerCase()
+  const at = (item: TrackedMedia) => frozen.get(item.id)?.at ?? 0
+  const filter = quickFilter.value
+  const matches = allMedia.value.filter(
+    (item) =>
+      (filter === 'all' || frozen.get(item.id)?.status === filter) &&
+      (!q || item.title.toLowerCase().includes(q)),
+  )
+  const sorted = [...matches].sort((a, b) => at(b) - at(a))
+  return q ? sorted : sorted.slice(0, RECENT_LIMIT)
+})
+
+const progressText = (item: TrackedMedia) => {
+  if (isShow(item)) {
+    if (item.currentSeason < 1) return 'Not started'
+    const total = item.totalEpisodes ? `/${item.totalEpisodes}` : ''
+    return `S${item.currentSeason} · E${item.currentEpisode}${total}`
+  }
+  return item.runtimeMinutes
+    ? `${item.currentMinutes}/${item.runtimeMinutes}m`
+    : `${item.currentMinutes}m`
+}
+
+const canStep = (item: TrackedMedia, delta: number) => {
+  if (isShow(item)) {
+    if (delta < 0) return item.currentEpisode > (item.status === 'next' ? 0 : 1)
+    return !item.totalEpisodes || item.currentEpisode < item.totalEpisodes
+  }
+  if (delta < 0) return item.currentMinutes > 0
+  return !item.runtimeMinutes || item.currentMinutes < item.runtimeMinutes
+}
+
+const stepProgress = (item: TrackedMedia, delta: number) => {
+  const step = isShow(item) ? stepEpisode(item, delta) : stepMinutes(item, delta * MOVIE_STEP_MINUTES)
+  step.catch((err) => console.error('Failed to update progress:', err))
+}
+
+const stepLabel = (item: TrackedMedia, delta: number) => {
+  const dir = delta < 0 ? 'Back' : 'Forward'
+  return isShow(item) ? `${dir} one episode` : `${dir} ${MOVIE_STEP_MINUTES} minutes`
+}
+
+const closeSelects = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   if (!target.closest('.dropdown-group')) isStatusOpen.value = false
+  if (!target.closest('.quick-filter')) isQuickFilterOpen.value = false
 }
 
 onMounted(() => {
-  refreshCount()
+  Promise.all([getAllMedia(), loadQuickFilter()]).then(([list]) => setMedia(list))
   detectImdbActiveTab()
-  onMediaStorageChange((updatedList) => {
-    mediaCount.value = updatedList.length
-  })
-  document.addEventListener('click', closeStatusSelect)
+  onMediaStorageChange(setMedia)
+  document.addEventListener('click', closeSelects)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', closeStatusSelect)
+  document.removeEventListener('click', closeSelects)
 })
 
 const closeModal = () => {
@@ -678,19 +758,115 @@ const handleAddMediaSubmit = async () => {
 
     <div class="content">
       <!-- Summary view -->
-      <div v-if="!isModalOpen" class="count-card accent">
-        <div class="count-display">
-          <span class="count-label">Media in Watchlist</span>
-          <span class="count-number">{{ mediaCount }}</span>
+      <div v-if="!isModalOpen" class="home">
+        <div class="count-card accent">
+          <div class="count-display">
+            <span class="count-label">Media in Watchlist</span>
+            <span class="count-number">{{ mediaCount }}</span>
+          </div>
+          <button
+            class="primary-btn"
+            :disabled="imdbInList"
+            :title="imdbInList ? 'Already in your watchlist' : undefined"
+            @click="openModal"
+          >
+            {{ imdbInList ? 'In watchlist' : isImdbPage ? '+ from IMDb' : '+ Media' }}
+          </button>
         </div>
-        <button
-          class="primary-btn"
-          :disabled="imdbInList"
-          :title="imdbInList ? 'Already in your watchlist' : undefined"
-          @click="openModal"
-        >
-          {{ imdbInList ? 'In watchlist' : isImdbPage ? '+ from IMDb' : '+ Media' }}
-        </button>
+
+        <section v-if="mediaCount > 0" class="quick" aria-label="Quick progress">
+          <div class="quick-bar">
+            <input
+              v-model="quickQuery"
+              type="search"
+              class="quick-search"
+              placeholder="Search your list"
+              aria-label="Search your list"
+              autocomplete="off"
+            />
+            <div class="select quick-filter" :class="{ 'is-open': isQuickFilterOpen }">
+              <div
+                class="selected"
+                title="Choose which status to show"
+                @click.stop="isQuickFilterOpen = !isQuickFilterOpen"
+              >
+                <span>{{ formatFilter(quickFilter) }}</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  height="1em"
+                  viewBox="0 0 512 512"
+                  class="arrow"
+                >
+                  <path
+                    d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
+                  ></path>
+                </svg>
+              </div>
+              <div class="options">
+                <label
+                  v-for="f in QUICK_FILTERS"
+                  :key="f"
+                  class="option-item"
+                  :class="{ active: quickFilter === f }"
+                  @click="setQuickFilter(f)"
+                >
+                  {{ formatFilter(f) }}
+                </label>
+              </div>
+            </div>
+          </div>
+          <span class="quick-label">
+            {{ quickQuery.trim() ? `${quickList.length} found` : 'Recent' }}
+          </span>
+          <ul v-if="quickList.length" class="quick-list">
+            <li v-for="item in quickList" :key="item.id" class="quick-row">
+              <img
+                v-if="item.posterPath && !failedPosters[item.id]"
+                class="quick-poster"
+                :src="item.posterPath"
+                alt=""
+                loading="lazy"
+                @error="failedPosters[item.id] = true"
+              />
+              <span v-else class="quick-poster" aria-hidden="true"></span>
+              <div class="quick-info">
+                <a
+                  v-if="item.watchingUrl"
+                  class="quick-title"
+                  :href="item.watchingUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :title="item.title"
+                >{{ item.title }}</a>
+                <span v-else class="quick-title" :title="item.title">{{ item.title }}</span>
+                <span class="quick-progress">
+                  {{ progressText(item) }}<template v-if="item.status !== quickFilter"> · {{ formatStatus(item.status) }}</template>
+                </span>
+              </div>
+              <div class="quick-steps">
+                <button
+                  type="button"
+                  class="step-btn"
+                  :disabled="!canStep(item, -1)"
+                  :aria-label="stepLabel(item, -1)"
+                  :title="stepLabel(item, -1)"
+                  @click="stepProgress(item, -1)"
+                >−</button>
+                <button
+                  type="button"
+                  class="step-btn"
+                  :disabled="!canStep(item, 1)"
+                  :aria-label="stepLabel(item, 1)"
+                  :title="stepLabel(item, 1)"
+                  @click="stepProgress(item, 1)"
+                >+</button>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="quick-empty">
+            {{ quickQuery.trim() ? 'No matches' : 'Nothing here yet' }}
+          </p>
+        </section>
       </div>
 
     <!-- Add-media view -->
@@ -1163,6 +1339,179 @@ body::-webkit-scrollbar {
 }
 
 /* ---------- Summary View ---------- */
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+}
+
+/* ---------- Quick List ---------- */
+.quick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.quick-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.quick-search {
+  flex: 1;
+  min-width: 0;
+  height: 1.7rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
+  color: var(--text-primary);
+  font-size: 0.74rem;
+  font-family: inherit;
+}
+
+.quick-search::placeholder {
+  color: var(--text-muted);
+}
+
+.quick-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.quick-label {
+  margin-top: 0.15rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* .select sets width: 100% later in the file */
+.select.quick-filter {
+  flex-shrink: 0;
+  width: 6.5rem;
+  z-index: 50;
+}
+
+.quick-filter .selected {
+  height: 1.7rem;
+  padding: 0 0.5rem;
+  font-size: 0.72rem;
+}
+
+.quick-filter .option-item {
+  padding: 0.32rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.quick-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.quick-list::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.quick-row:last-child {
+  border-bottom: none;
+}
+
+.quick-poster {
+  flex-shrink: 0;
+  width: 26px;
+  height: 39px;
+  object-fit: cover;
+  background: var(--accent-soft);
+}
+
+.quick-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-title {
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+a.quick-title:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.quick-progress {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+}
+
+.quick-steps {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.2rem;
+}
+
+.step-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.step-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.quick-empty {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .count-card {
   display: flex;
   align-items: center;
