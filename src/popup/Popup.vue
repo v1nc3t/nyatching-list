@@ -1285,8 +1285,8 @@ body::-webkit-scrollbar {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
   border: none;
   padding: 0.28rem 0.5rem;
   border-radius: 8px;
