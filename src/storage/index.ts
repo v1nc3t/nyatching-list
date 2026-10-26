@@ -306,22 +306,76 @@ export async function deleteMedia(id: string): Promise<void> {
 // BACKUP (EXPORT / IMPORT)
 // ==========================================
 
+export const THEME_STORAGE_KEY = 'nyatching_theme' as const;
 const BACKUP_FORMAT = 'nyatching-list-backup' as const;
 
+type Theme = 'light' | 'dark';
+
+export interface BackupSettings {
+  newSeasonCheckIntervalHours: number;
+  reminderIntervalHours: number;
+  theme?: Theme;
+}
+
+/** Every part is optional: a file holds only what was picked on export. */
 export interface Backup {
   format: typeof BACKUP_FORMAT;
   version: 1;
   exportedAt: string;
-  media: TrackedMedia[];
+  media?: TrackedMedia[];
+  settings?: BackupSettings;
+  notifications?: NotificationItem[];
 }
 
-export async function exportBackup(): Promise<Backup> {
-  return {
+export interface MediaFilter {
+  types: TrackedMedia['mediaType'][];
+  statuses: MediaStatus[];
+}
+
+export interface ExportChoice {
+  /** null leaves titles out of the file. */
+  media: MediaFilter | null;
+  settings: boolean;
+  notifications: boolean;
+}
+
+export interface ImportResult {
+  media?: { added: number; updated: number; skipped: number };
+  settings?: AppSettings;
+  notificationsAdded?: number;
+}
+
+export const matchesMediaFilter = (item: TrackedMedia, filter: MediaFilter): boolean =>
+  filter.types.includes(item.mediaType) && filter.statuses.includes(item.status);
+
+const isTheme = (value: unknown): value is Theme => value === 'light' || value === 'dark';
+
+export async function exportBackup(choice: ExportChoice): Promise<Backup> {
+  const backup: Backup = {
     format: BACKUP_FORMAT,
     version: 1,
     exportedAt: new Date().toISOString(),
-    media: await getAllMedia(),
   };
+
+  if (choice.media) {
+    const filter = choice.media;
+    backup.media = (await getAllMedia()).filter((item) => matchesMediaFilter(item, filter));
+  }
+  if (choice.settings) {
+    const { newSeasonCheckIntervalHours, reminderIntervalHours } = await getSettings();
+    const theme = isStorageAvailable()
+      ? (await browser.storage.local.get(THEME_STORAGE_KEY))[THEME_STORAGE_KEY]
+      : undefined;
+    backup.settings = {
+      newSeasonCheckIntervalHours,
+      reminderIntervalHours,
+      ...(isTheme(theme) ? { theme } : {}),
+    };
+  }
+  if (choice.notifications) {
+    backup.notifications = await getNotificationLog();
+  }
+  return backup;
 }
 
 function isValidMedia(item: unknown): item is TrackedMedia {
@@ -343,27 +397,15 @@ function isValidMedia(item: unknown): item is TrackedMedia {
 const mediaKey = (m: TrackedMedia): string =>
   m.tmdbId ? `${m.mediaType}:${m.tmdbId}` : m.id;
 
-/** Merges a backup into the list. Never removes titles; when a title is in both, the newer copy wins. */
-export async function importBackup(
-  json: string
-): Promise<{ added: number; updated: number; skipped: number }> {
-  let parsed: Partial<Backup>;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new Error('This file is not valid JSON.');
-  }
-  if (parsed?.format !== BACKUP_FORMAT || !Array.isArray(parsed.media)) {
-    throw new Error('This is not a Nyatching List backup file.');
-  }
-
+/** Never removes titles; when a title is in both, the newer copy wins. */
+async function mergeMedia(items: unknown[]): Promise<NonNullable<ImportResult['media']>> {
   const list = await getAllMedia();
   const indexByKey = new Map(list.map((m, i) => [mediaKey(m), i]));
   let added = 0;
   let updated = 0;
   let skipped = 0;
 
-  for (const item of parsed.media) {
+  for (const item of items) {
     if (!isValidMedia(item)) {
       skipped++;
       continue;
@@ -379,8 +421,79 @@ export async function importBackup(
     }
   }
 
-  await setStorageData({ [STORAGE_KEY]: list });
+  if (added || updated) await setStorageData({ [STORAGE_KEY]: list });
   return { added, updated, skipped };
+}
+
+const isValidInterval = (value: unknown): value is number =>
+  typeof value === 'number' && (value === -1 || value > 0);
+
+function isValidNotification(item: unknown): item is NotificationItem {
+  const n = item as Record<string, unknown> | null;
+  return (
+    !!n &&
+    typeof n.id === 'string' &&
+    typeof n.showId === 'string' &&
+    typeof n.title === 'string' &&
+    typeof n.message === 'string' &&
+    typeof n.timestamp === 'number' &&
+    typeof n.read === 'boolean'
+  );
+}
+
+/** Adds entries not already in the log, newest first. */
+async function mergeNotifications(items: unknown[]): Promise<number> {
+  const current = await getNotificationLog();
+  const ids = new Set(current.map((n) => n.id));
+  const added: NotificationItem[] = [];
+  for (const item of items) {
+    if (isValidNotification(item) && !ids.has(item.id)) {
+      ids.add(item.id);
+      added.push(item);
+    }
+  }
+  if (added.length) {
+    const merged = [...current, ...added].sort((a, b) => b.timestamp - a.timestamp);
+    await setStorageData({ [NOTIFICATIONS_STORAGE_KEY]: merged });
+  }
+  return added.length;
+}
+
+/** Imports whatever parts the backup holds. Settings and theme are replaced; titles and notifications are merged. */
+export async function importBackup(json: string): Promise<ImportResult> {
+  let parsed: Partial<Backup>;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error('This file is not valid JSON.');
+  }
+  if (parsed?.format !== BACKUP_FORMAT) {
+    throw new Error('This is not a Nyatching List backup file.');
+  }
+
+  const result: ImportResult = {};
+
+  if (Array.isArray(parsed.media)) {
+    result.media = await mergeMedia(parsed.media);
+  }
+
+  const s = parsed.settings;
+  if (s && isValidInterval(s.newSeasonCheckIntervalHours) && isValidInterval(s.reminderIntervalHours)) {
+    result.settings = await saveSettings({
+      newSeasonCheckIntervalHours: s.newSeasonCheckIntervalHours,
+      reminderIntervalHours: s.reminderIntervalHours,
+    });
+    if (isTheme(s.theme)) await setStorageData({ [THEME_STORAGE_KEY]: s.theme });
+  }
+
+  if (Array.isArray(parsed.notifications)) {
+    result.notificationsAdded = await mergeNotifications(parsed.notifications);
+  }
+
+  if (!result.media && !result.settings && result.notificationsAdded === undefined) {
+    throw new Error('This backup has nothing to import.');
+  }
+  return result;
 }
 
 // ==========================================

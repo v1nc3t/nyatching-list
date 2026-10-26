@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue'
 import browser from 'webextension-polyfill'
-import { AppSettings } from '../types'
-import { exportBackup, getSettings, importBackup, saveSettings } from '../storage'
+import { AppSettings, MediaStatus, TrackedMedia } from '../types'
+import {
+  exportBackup,
+  getAllMedia,
+  getNotificationLog,
+  getSettings,
+  importBackup,
+  matchesMediaFilter,
+  saveSettings,
+  Backup,
+  ImportResult,
+} from '../storage'
 import { scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
@@ -52,8 +62,9 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  settings.value = await getSettings()
   document.addEventListener('click', handleClickOutside)
+  settings.value = await getSettings()
+  await loadBackupCounts()
 })
 
 onUnmounted(() => {
@@ -66,23 +77,96 @@ const selectInterval = (key: 'episode' | 'reminder', val: number) => {
   openMenu.value = null
 }
 
+// ---------- Backup ----------
+
+const TYPE_CHOICES: { value: TrackedMedia['mediaType']; label: string }[] = [
+  { value: 'show', label: 'Shows' },
+  { value: 'movie', label: 'Movies' },
+]
+
+const STATUS_CHOICES: { value: MediaStatus; label: string }[] = [
+  { value: 'watching', label: 'Watching' },
+  { value: 'waiting', label: 'Waiting' },
+  { value: 'next', label: 'Next up' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'dropped', label: 'Dropped' },
+]
+
+const media = ref<TrackedMedia[]>([])
+const notificationCount = ref(0)
+const exportTitles = ref(true)
+const exportTypes = ref(TYPE_CHOICES.map((t) => t.value))
+const exportStatuses = ref(STATUS_CHOICES.map((s) => s.value))
+const exportSettings = ref(true)
+const exportNotifications = ref(false)
 const backupMessage = ref('')
 const importInput = ref<HTMLInputElement | null>(null)
 
+const mediaFilter = computed(() => ({ types: exportTypes.value, statuses: exportStatuses.value }))
+const titleCount = computed(
+  () => media.value.filter((item) => matchesMediaFilter(item, mediaFilter.value)).length
+)
+const canExport = computed(
+  () => exportTitles.value || exportSettings.value || exportNotifications.value
+)
+
+function toggle<T>(list: T[], value: T): T[] {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+const loadBackupCounts = async () => {
+  media.value = await getAllMedia()
+  notificationCount.value = (await getNotificationLog()).length
+}
+
+const describeExport = (backup: Backup): string =>
+  [
+    backup.media && plural(backup.media.length, 'title'),
+    backup.settings && 'settings',
+    backup.notifications && plural(backup.notifications.length, 'notification'),
+  ]
+    .filter(Boolean)
+    .join(', ')
+
+const describeImport = (result: ImportResult): string => {
+  const parts: string[] = []
+  if (result.media) {
+    const { added, updated, skipped } = result.media
+    parts.push(
+      `${plural(added, 'title')} added, ${updated} updated` + (skipped ? `, ${skipped} skipped` : '')
+    )
+  }
+  if (result.settings) parts.push('settings applied')
+  if (result.notificationsAdded !== undefined) {
+    parts.push(`${plural(result.notificationsAdded, 'notification')} added`)
+  }
+  return parts.join(', ')
+}
+
+const downloadJson = (data: unknown, filename: string) => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  // Firefox can cancel the download if the URL is revoked right away
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 const handleExport = async () => {
   try {
-    const backup = await exportBackup()
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `nyatching-list-backup-${backup.exportedAt.slice(0, 10)}.json`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    // Firefox can cancel the download if the URL is revoked right away
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-    backupMessage.value = `Exported ${backup.media.length} titles.`
+    const backup = await exportBackup({
+      media: exportTitles.value ? mediaFilter.value : null,
+      settings: exportSettings.value,
+      notifications: exportNotifications.value,
+    })
+    downloadJson(backup, `nyatching-list-backup-${backup.exportedAt.slice(0, 10)}.json`)
+    backupMessage.value = `Exported ${describeExport(backup)}.`
   } catch (error) {
     console.error('[Nyatching List] Export failed:', error)
     backupMessage.value = 'Export failed.'
@@ -95,11 +179,29 @@ const handleImportFile = async (event: Event) => {
   input.value = ''
   if (!file) return
   try {
-    const { added, updated, skipped } = await importBackup(await file.text())
-    backupMessage.value =
-      `Imported: ${added} added, ${updated} updated` + (skipped ? `, ${skipped} skipped` : '') + '.'
+    const result = await importBackup(await file.text())
+    if (result.settings) {
+      settings.value = result.settings
+      await notifyBackground(result.settings)
+    }
+    await loadBackupCounts()
+    backupMessage.value = `Imported: ${describeImport(result)}.`
   } catch (error) {
     backupMessage.value = (error as Error).message
+  }
+}
+
+// ---------- Save ----------
+
+const notifyBackground = async (saved: AppSettings) => {
+  try {
+    await browser.runtime.sendMessage({
+      type: 'SETTINGS_UPDATED',
+      settings: saved,
+    })
+  } catch (error) {
+    console.error('[Nyatching List] Background did not acknowledge settings:', error)
+    await scheduleReleaseCheckAlarm(saved)
   }
 }
 
@@ -107,17 +209,7 @@ const handleSave = async () => {
   isSaving.value = true
   try {
     const saved = await saveSettings({ ...settings.value })
-
-    try {
-      await browser.runtime.sendMessage({
-        type: 'SETTINGS_UPDATED',
-        settings: saved,
-      })
-    } catch (error) {
-      console.error('[Nyatching List] Background did not acknowledge settings:', error)
-      await scheduleReleaseCheckAlarm(saved)
-    }
-
+    await notifyBackground(saved)
     emit('close')
   } catch (error) {
     console.error('[Nyatching List] Failed to save settings:', error)
@@ -160,15 +252,73 @@ const handleSave = async () => {
           </div>
         </div>
 
+        <div class="form-group backup-start">
+          <label>Export</label>
+          <p class="form-hint">Pick what goes in the JSON file.</p>
+
+          <label class="check-row">
+            <input v-model="exportTitles" type="checkbox" />
+            <span>Titles</span>
+            <span class="check-meta">{{ titleCount }} of {{ media.length }}</span>
+          </label>
+          <div v-if="exportTitles" class="chip-rows">
+            <div class="chips" role="group" aria-label="Types to export">
+              <button
+                v-for="t in TYPE_CHOICES"
+                :key="t.value"
+                type="button"
+                class="chip"
+                :class="{ active: exportTypes.includes(t.value) }"
+                :aria-pressed="exportTypes.includes(t.value)"
+                @click="exportTypes = toggle(exportTypes, t.value)"
+              >
+                {{ t.label }}
+              </button>
+            </div>
+            <div class="chips" role="group" aria-label="Statuses to export">
+              <button
+                v-for="s in STATUS_CHOICES"
+                :key="s.value"
+                type="button"
+                class="chip"
+                :class="{ active: exportStatuses.includes(s.value) }"
+                :aria-pressed="exportStatuses.includes(s.value)"
+                @click="exportStatuses = toggle(exportStatuses, s.value)"
+              >
+                {{ s.label }}
+              </button>
+            </div>
+          </div>
+
+          <label class="check-row">
+            <input v-model="exportSettings" type="checkbox" />
+            <span>Settings</span>
+            <span class="check-meta">intervals, theme</span>
+          </label>
+
+          <label class="check-row">
+            <input v-model="exportNotifications" type="checkbox" />
+            <span>Notification history</span>
+            <span class="check-meta">{{ notificationCount }}</span>
+          </label>
+
+          <div class="backup-actions">
+            <button type="button" class="secondary-btn" :disabled="!canExport" @click="handleExport">
+              Export JSON
+            </button>
+          </div>
+        </div>
+
         <div class="form-group">
-          <label>Backup</label>
+          <label>Import</label>
           <p class="form-hint">
-            Save your list to a file, or add titles from a backup. Import never removes titles. If a
-            title is in both, the newer copy is kept.
+            Restores what a backup file holds. Titles are added and never removed; if a title is in
+            both, the newer copy is kept.
           </p>
           <div class="backup-actions">
-            <button type="button" class="secondary-btn" @click="handleExport">Export</button>
-            <button type="button" class="secondary-btn" @click="importInput?.click()">Import</button>
+            <button type="button" class="secondary-btn" @click="importInput?.click()">
+              Import JSON
+            </button>
             <input
               ref="importInput"
               type="file"
@@ -177,8 +327,9 @@ const handleSave = async () => {
               @change="handleImportFile"
             />
           </div>
-          <p v-if="backupMessage" class="form-hint">{{ backupMessage }}</p>
         </div>
+
+        <p v-if="backupMessage" class="form-hint backup-message" role="status">{{ backupMessage }}</p>
       </div>
 
       <div class="modal-actions">
@@ -210,6 +361,8 @@ const handleSave = async () => {
   padding: 1.25rem 1.4rem;
   width: 380px;
   max-width: calc(100vw - 2rem);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
   box-sizing: border-box;
   color: var(--text-primary);
   box-shadow: 0 8px 24px var(--shadow);
@@ -363,9 +516,83 @@ const handleSave = async () => {
   font-weight: 700;
 }
 
+.backup-start {
+  margin-top: 0.6rem;
+}
+
+.form-group .check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.check-meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.chip-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-left: 1.55rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+
 .backup-actions {
   display: flex;
   gap: 0.65rem;
+  margin-top: 0.2rem;
+}
+
+.backup-message {
+  color: var(--text-secondary);
+}
+
+.secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .modal-actions {
