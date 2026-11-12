@@ -13,6 +13,7 @@ const showExport = ref(false)
 const showImport = ref(false)
 
 const handleImported = async (result: ImportResult) => {
+  emit('close')
   if (result.settings) await notifySettingsUpdated(result.settings)
 }
 </script>
@@ -49,7 +50,7 @@ const handleImported = async (result: ImportResult) => {
     </div>
 
     <Teleport to="body">
-      <ExportModal v-if="showExport" @close="showExport = false" />
+      <ExportModal v-if="showExport" @close="showExport = false" @exported="emit('close')" />
       <ImportModal v-if="showImport" @close="showImport = false" @imported="handleImported" />
     </Teleport>
   </div>

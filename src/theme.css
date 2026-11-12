@@ -92,6 +92,7 @@ h1,
 .suggestion-title,
 .quick-title,
 .modal-subtitle,
+.pick-title,
 #title-input,
 input[type='number'] {
   text-transform: none !important;

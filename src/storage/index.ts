@@ -348,6 +348,8 @@ export interface MediaFilter {
   statuses: MediaStatus[];
   /** Field groups left out of each title. Empty = all fields. */
   excludeFields: MediaFieldGroup[];
+  /** Titles the user unchecked. */
+  excludeIds: string[];
 }
 
 export interface ExportChoice {
@@ -391,7 +393,7 @@ export async function exportBackup(choice: ExportChoice): Promise<Backup> {
       (g) => g.fields
     );
     backup.media = (await getAllMedia())
-      .filter((item) => matchesMediaFilter(item, filter))
+      .filter((item) => matchesMediaFilter(item, filter) && !filter.excludeIds.includes(item.id))
       .map((item) => {
         const copy: Record<string, unknown> = { ...item };
         for (const key of dropped) delete copy[key];

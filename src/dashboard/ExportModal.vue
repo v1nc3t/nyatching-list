@@ -7,7 +7,6 @@ import {
   getNotificationLog,
   matchesMediaFilter,
   MEDIA_FIELD_GROUPS,
-  Backup,
   MediaFieldGroup,
   MediaFilter,
   StatusMode,
@@ -15,6 +14,7 @@ import {
 
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'exported'): void
 }>()
 
 const TYPE_CHOICES: { value: TrackedMedia['mediaType']; label: string }[] = [
@@ -44,6 +44,7 @@ const statusMode = ref<StatusMode>('all')
 const exportStatuses = ref<MediaStatus[]>([])
 const excludeSome = ref(false)
 const excludeFields = ref<MediaFieldGroup[]>([])
+const excludedIds = ref<string[]>([])
 const exportSettings = ref(true)
 const exportNotifications = ref(false)
 const backupMessage = ref('')
@@ -53,10 +54,28 @@ const mediaFilter = computed<MediaFilter>(() => ({
   statusMode: statusMode.value,
   statuses: statusMode.value === 'all' ? [] : exportStatuses.value,
   excludeFields: excludeSome.value ? excludeFields.value : [],
+  excludeIds: excludedIds.value,
 }))
-const titleCount = computed(
-  () => media.value.filter((item) => matchesMediaFilter(item, mediaFilter.value)).length
+// Titles the type and status filters let through, A to Z
+const shownTitles = computed(() =>
+  media.value
+    .filter((item) => matchesMediaFilter(item, mediaFilter.value))
+    .sort((a, b) => a.title.localeCompare(b.title))
 )
+const titleCount = computed(
+  () => shownTitles.value.filter((item) => !excludedIds.value.includes(item.id)).length
+)
+const allShownChecked = computed(() => titleCount.value === shownTitles.value.length)
+
+const toggleAllShown = () => {
+  const ids = shownTitles.value.map((item) => item.id)
+  excludedIds.value = allShownChecked.value
+    ? [...new Set([...excludedIds.value, ...ids])]
+    : excludedIds.value.filter((id) => !ids.includes(id))
+}
+
+const statusLabel = (status: MediaStatus) =>
+  STATUS_CHOICES.find((s) => s.value === status)?.label ?? status
 const canExport = computed(
   () =>
     (exportTitles.value || exportSettings.value || exportNotifications.value) &&
@@ -71,17 +90,6 @@ onMounted(async () => {
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
 }
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
-
-const describeExport = (backup: Backup): string =>
-  [
-    backup.media && plural(backup.media.length, 'title'),
-    backup.settings && 'settings',
-    backup.notifications && plural(backup.notifications.length, 'notification'),
-  ]
-    .filter(Boolean)
-    .join(', ')
 
 const downloadJson = (data: unknown, filename: string) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -104,7 +112,7 @@ const handleExport = async () => {
       notifications: exportNotifications.value,
     })
     downloadJson(backup, `nyatching-list-backup-${backup.exportedAt.slice(0, 10)}.json`)
-    backupMessage.value = `Exported ${describeExport(backup)}.`
+    emit('exported')
   } catch (error) {
     console.error('[Nyatching List] Export failed:', error)
     backupMessage.value = 'Export failed.'
@@ -131,85 +139,123 @@ const handleExport = async () => {
             <span>Titles</span>
             <span class="check-meta">{{ titleCount }} of {{ media.length }}</span>
           </label>
-          <div v-if="exportTitles" class="chip-rows">
-            <div class="chips" role="group" aria-label="Types to export">
-              <button
-                v-for="t in TYPE_CHOICES"
-                :key="t.value"
-                type="button"
-                class="chip"
-                :class="{ active: exportTypes.includes(t.value) }"
-                :aria-pressed="exportTypes.includes(t.value)"
-                @click="exportTypes = toggle(exportTypes, t.value)"
-              >
-                {{ t.label }}
-              </button>
-            </div>
-
-            <div class="chips" role="group" aria-label="Which statuses to export">
-              <button
-                v-for="m in STATUS_MODES"
-                :key="m.value"
-                type="button"
-                class="chip"
-                :class="{ active: statusMode === m.value }"
-                :aria-pressed="statusMode === m.value"
-                @click="statusMode = m.value"
-              >
-                {{ m.label }}
-              </button>
-            </div>
-            <div v-if="statusMode !== 'all'" class="chips" role="group" aria-label="Statuses">
-              <button
-                v-for="s in STATUS_CHOICES"
-                :key="s.value"
-                type="button"
-                class="chip"
-                :class="{ active: exportStatuses.includes(s.value) }"
-                :aria-pressed="exportStatuses.includes(s.value)"
-                @click="exportStatuses = toggle(exportStatuses, s.value)"
-              >
-                {{ s.label }}
-              </button>
-            </div>
-
-            <div class="chips" role="group" aria-label="Which fields to export">
-              <button
-                type="button"
-                class="chip"
-                :class="{ active: !excludeSome }"
-                :aria-pressed="!excludeSome"
-                @click="excludeSome = false"
-              >
-                All fields
-              </button>
-              <button
-                type="button"
-                class="chip"
-                :class="{ active: excludeSome }"
-                :aria-pressed="excludeSome"
-                @click="excludeSome = true"
-              >
-                Exclude some
-              </button>
-            </div>
-            <template v-if="excludeSome">
-              <div class="chips" role="group" aria-label="Fields to leave out">
+          <div v-if="exportTitles" class="titles-panel">
+            <div class="filter-row">
+              <span class="filter-label">Type</span>
+              <div class="chips" role="group" aria-label="Types to export">
                 <button
-                  v-for="g in MEDIA_FIELD_GROUPS"
-                  :key="g.key"
+                  v-for="t in TYPE_CHOICES"
+                  :key="t.value"
                   type="button"
                   class="chip"
-                  :class="{ active: excludeFields.includes(g.key) }"
-                  :aria-pressed="excludeFields.includes(g.key)"
-                  :title="g.hint"
-                  @click="excludeFields = toggle(excludeFields, g.key)"
+                  :class="{ active: exportTypes.includes(t.value) }"
+                  :aria-pressed="exportTypes.includes(t.value)"
+                  @click="exportTypes = toggle(exportTypes, t.value)"
                 >
-                  {{ g.label }}
+                  {{ t.label }}
                 </button>
               </div>
-              <p class="form-hint">Name, type, status and dates are always kept.</p>
-            </template>
+            </div>
+
+            <div class="filter-row">
+              <span class="filter-label">Status</span>
+              <div class="filter-stack">
+                <div class="chips" role="group" aria-label="Which statuses to export">
+                  <button
+                    v-for="m in STATUS_MODES"
+                    :key="m.value"
+                    type="button"
+                    class="chip"
+                    :class="{ active: statusMode === m.value }"
+                    :aria-pressed="statusMode === m.value"
+                    @click="statusMode = m.value"
+                  >
+                    {{ m.label }}
+                  </button>
+                </div>
+                <div v-if="statusMode !== 'all'" class="chips" role="group" aria-label="Statuses">
+                  <button
+                    v-for="s in STATUS_CHOICES"
+                    :key="s.value"
+                    type="button"
+                    class="chip"
+                    :class="{ active: exportStatuses.includes(s.value) }"
+                    :aria-pressed="exportStatuses.includes(s.value)"
+                    @click="exportStatuses = toggle(exportStatuses, s.value)"
+                  >
+                    {{ s.label }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-row">
+              <span class="filter-label">Fields</span>
+              <div class="filter-stack">
+                <div class="chips" role="group" aria-label="Which fields to export">
+                  <button
+                    type="button"
+                    class="chip"
+                    :class="{ active: !excludeSome }"
+                    :aria-pressed="!excludeSome"
+                    @click="excludeSome = false"
+                  >
+                    All fields
+                  </button>
+                  <button
+                    type="button"
+                    class="chip"
+                    :class="{ active: excludeSome }"
+                    :aria-pressed="excludeSome"
+                    @click="excludeSome = true"
+                  >
+                    Exclude some
+                  </button>
+                </div>
+                <template v-if="excludeSome">
+                  <div class="chips" role="group" aria-label="Fields to leave out">
+                    <button
+                      v-for="g in MEDIA_FIELD_GROUPS"
+                      :key="g.key"
+                      type="button"
+                      class="chip"
+                      :class="{ active: excludeFields.includes(g.key) }"
+                      :aria-pressed="excludeFields.includes(g.key)"
+                      :title="g.hint"
+                      @click="excludeFields = toggle(excludeFields, g.key)"
+                    >
+                      {{ g.label }}
+                    </button>
+                  </div>
+                  <p class="form-hint">Name, type, status and dates are always kept.</p>
+                </template>
+              </div>
+            </div>
+
+            <div v-if="shownTitles.length" class="title-list">
+              <label class="title-row title-row-all">
+                <input
+                  type="checkbox"
+                  :checked="allShownChecked"
+                  :indeterminate="titleCount > 0 && !allShownChecked"
+                  @change="toggleAllShown"
+                />
+                <span>Select all</span>
+                <span class="check-meta">{{ titleCount }} selected</span>
+              </label>
+              <div class="title-scroll">
+                <label v-for="item in shownTitles" :key="item.id" class="title-row">
+                  <input
+                    type="checkbox"
+                    :checked="!excludedIds.includes(item.id)"
+                    @change="excludedIds = toggle(excludedIds, item.id)"
+                  />
+                  <span class="pick-title">{{ item.title }}</span>
+                  <span class="check-meta">{{ item.mediaType }} · {{ statusLabel(item.status) }}</span>
+                </label>
+              </div>
+            </div>
+            <p v-else class="form-hint">No titles match these filters.</p>
           </div>
 
           <label class="check-row">
@@ -257,7 +303,7 @@ const handleExport = async () => {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem 1.4rem;
-  width: 380px;
+  width: 420px;
   max-width: calc(100vw - 2rem);
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
@@ -331,7 +377,9 @@ const handleExport = async () => {
   cursor: pointer;
 }
 
-.check-row input {
+.check-row input,
+.title-row input {
+  flex-shrink: 0;
   accent-color: var(--accent);
   width: 1rem;
   height: 1rem;
@@ -341,17 +389,83 @@ const handleExport = async () => {
 
 .check-meta {
   margin-left: auto;
+  flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 0.78rem;
   font-weight: 500;
   color: var(--text-muted);
 }
 
-.chip-rows {
+.titles-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding-left: 1.55rem;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: 3.4rem 1fr;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.filter-label {
+  padding-top: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.filter-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.title-list {
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+}
+
+.title-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.form-group .title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.4rem;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.form-group .title-row:hover {
+  background: var(--bg-input);
+}
+
+.form-group .title-row-all {
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+
+.pick-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chips {
