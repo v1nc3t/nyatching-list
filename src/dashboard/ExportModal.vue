@@ -173,18 +173,15 @@ const handleExport = async () => {
                     {{ m.label }}
                   </button>
                 </div>
-                <div v-if="statusMode !== 'all'" class="chips" role="group" aria-label="Statuses">
-                  <button
-                    v-for="s in STATUS_CHOICES"
-                    :key="s.value"
-                    type="button"
-                    class="chip"
-                    :class="{ active: exportStatuses.includes(s.value) }"
-                    :aria-pressed="exportStatuses.includes(s.value)"
-                    @click="exportStatuses = toggle(exportStatuses, s.value)"
-                  >
-                    {{ s.label }}
-                  </button>
+                <div v-if="statusMode !== 'all'" class="pick-list" role="group" aria-label="Statuses">
+                  <label v-for="s in STATUS_CHOICES" :key="s.value" class="pick-row">
+                    <input
+                      type="checkbox"
+                      :checked="exportStatuses.includes(s.value)"
+                      @change="exportStatuses = toggle(exportStatuses, s.value)"
+                    />
+                    <span>{{ s.label }}</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -213,27 +210,28 @@ const handleExport = async () => {
                   </button>
                 </div>
                 <template v-if="excludeSome">
-                  <div class="chips" role="group" aria-label="Fields to leave out">
-                    <button
-                      v-for="g in MEDIA_FIELD_GROUPS"
-                      :key="g.key"
-                      type="button"
-                      class="chip"
-                      :class="{ active: excludeFields.includes(g.key) }"
-                      :aria-pressed="excludeFields.includes(g.key)"
-                      :title="g.hint"
-                      @click="excludeFields = toggle(excludeFields, g.key)"
-                    >
-                      {{ g.label }}
-                    </button>
+                  <div class="pick-list" role="group" aria-label="Fields to leave out">
+                    <label v-for="g in MEDIA_FIELD_GROUPS" :key="g.key" class="pick-row pick-row-stacked">
+                      <input
+                        type="checkbox"
+                        :checked="excludeFields.includes(g.key)"
+                        @change="excludeFields = toggle(excludeFields, g.key)"
+                      />
+                      <span class="pick-text">
+                        {{ g.label }}
+                        <small class="form-hint">{{ g.hint }}</small>
+                      </span>
+                    </label>
                   </div>
-                  <p class="form-hint">Name, type, status and dates are always kept.</p>
+                  <p class="form-hint">
+                    Checked fields are left out. Name, type, status and dates are always kept.
+                  </p>
                 </template>
               </div>
             </div>
 
             <div v-if="shownTitles.length" class="title-list">
-              <label class="title-row title-row-all">
+              <label class="pick-row pick-row-all">
                 <input
                   type="checkbox"
                   :checked="allShownChecked"
@@ -244,7 +242,7 @@ const handleExport = async () => {
                 <span class="check-meta">{{ titleCount }} selected</span>
               </label>
               <div class="title-scroll">
-                <label v-for="item in shownTitles" :key="item.id" class="title-row">
+                <label v-for="item in shownTitles" :key="item.id" class="pick-row">
                   <input
                     type="checkbox"
                     :checked="!excludedIds.includes(item.id)"
@@ -378,7 +376,7 @@ const handleExport = async () => {
 }
 
 .check-row input,
-.title-row input {
+.pick-row input {
   flex-shrink: 0;
   accent-color: var(--accent);
   width: 1rem;
@@ -438,7 +436,7 @@ const handleExport = async () => {
   scrollbar-color: var(--border) transparent;
 }
 
-.form-group .title-row {
+.form-group .pick-row {
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -451,11 +449,26 @@ const handleExport = async () => {
   cursor: pointer;
 }
 
-.form-group .title-row:hover {
+.form-group .pick-row:hover {
   background: var(--bg-input);
 }
 
-.form-group .title-row-all {
+.form-group .pick-row-stacked {
+  align-items: flex-start;
+}
+
+.pick-row-stacked input {
+  margin-top: 0.1rem;
+}
+
+.pick-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.form-group .pick-row-all {
   font-weight: 600;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.25rem;
