@@ -16,12 +16,13 @@ export function applyThemeToDocument(theme: Theme): void {
 /**
  * Runs the theme swap as a circle that grows from the toggle button to cover the page.
  * Browsers without view transitions, and reduced motion, swap at once.
+ * Resolves once the swap has run.
  */
-function revealTheme(origin: Element | null, swap: () => void): void {
+function revealTheme(origin: Element | null, swap: () => void): Promise<void> {
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (!origin || reduceMotion || !document.startViewTransition) {
     swap()
-    return
+    return Promise.resolve()
   }
 
   const box = origin.getBoundingClientRect()
@@ -44,6 +45,7 @@ function revealTheme(origin: Element | null, swap: () => void): void {
     .catch(() => {
       // Skipped transition: the theme is already swapped
     })
+  return transition.updateCallbackDone
 }
 
 /**
@@ -94,7 +96,9 @@ export function useTheme() {
   // 3. Save theme changes to extension storage when toggled
   const toggleTheme = async (event?: MouseEvent) => {
     const nextTheme: Theme = theme.value === 'dark' ? 'light' : 'dark'
-    revealTheme((event?.currentTarget as Element | null) ?? null, () => {
+    // Save only after the swap: the storage listener above would otherwise apply the
+    // theme outside the animation, and the page flashes the new color first
+    await revealTheme((event?.currentTarget as Element | null) ?? null, () => {
       theme.value = nextTheme
       applyThemeToDocument(nextTheme)
     })
