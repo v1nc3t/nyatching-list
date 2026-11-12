@@ -5,7 +5,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-Build-646cff?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![TMDB API](https://img.shields.io/badge/API-TMDB-01b4e4?style=flat-square&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0)
 
 A browser extension that helps you keep track of TV shows and movies you are watching.
 
@@ -202,4 +202,4 @@ Movie and TV metadata and posters come from [The Movie Database (TMDB)](https://
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GNU General Public License v3.0 (GPL-3.0-only). You can use, change and share this code; if you share a modified version, it must be released under the same license with its source. See [LICENSE](LICENSE).

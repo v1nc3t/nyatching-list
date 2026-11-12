@@ -5,7 +5,7 @@
   "author": "**",
   "description": "An extention to keep track of tv shows and movies that you are currently watching",
   "type": "module",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "keywords": [
     "chrome-extension",
     "firefox-extension",
