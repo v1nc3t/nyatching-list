@@ -4,6 +4,7 @@ import { ImportResult } from '../storage'
 import { notifySettingsUpdated } from '../background/alarm-schedule'
 import ExportModal from './ExportModal.vue'
 import ImportModal from './ImportModal.vue'
+import ImdbRatingsModal from './ImdbRatingsModal.vue'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -11,6 +12,7 @@ const emit = defineEmits<{
 
 const showExport = ref(false)
 const showImport = ref(false)
+const showImdbRatings = ref(false)
 
 const handleImported = async (result: ImportResult) => {
   emit('close')
@@ -40,9 +42,12 @@ const handleImported = async (result: ImportResult) => {
 
         <section class="form-group">
           <h5>IMDb</h5>
-          <p class="form-hint">Coming soon.</p>
+          <p class="form-hint">Add titles from an IMDb CSV export. Watchlist and export are coming soon.</p>
           <div class="backup-actions">
-            <button type="button" class="secondary-btn" disabled>Import…</button>
+            <button type="button" class="secondary-btn" @click="showImdbRatings = true">
+              Import ratings…
+            </button>
+            <button type="button" class="secondary-btn" disabled>Import watchlist…</button>
             <button type="button" class="secondary-btn" disabled>Export…</button>
           </div>
         </section>
@@ -52,6 +57,7 @@ const handleImported = async (result: ImportResult) => {
     <Teleport to="body">
       <ExportModal v-if="showExport" @close="showExport = false" @exported="emit('close')" />
       <ImportModal v-if="showImport" @close="showImport = false" @imported="handleImported" />
+      <ImdbRatingsModal v-if="showImdbRatings" @close="showImdbRatings = false" @imported="emit('close')" />
     </Teleport>
   </div>
 </template>
@@ -143,6 +149,7 @@ const handleImported = async (result: ImportResult) => {
 
 .backup-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.65rem;
   margin-top: 0.2rem;
 }

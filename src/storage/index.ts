@@ -449,7 +449,7 @@ const mediaKey = (m: Pick<TrackedMedia, 'id' | 'mediaType' | 'tmdbId'>): string 
   m.tmdbId ? `${m.mediaType}:${m.tmdbId}` : m.id;
 
 /** Never removes titles; when a title is in both, the newer copy wins field by field (fields missing from the file keep their value). */
-async function mergeMedia(items: unknown[]): Promise<NonNullable<ImportResult['media']>> {
+export async function mergeMedia(items: unknown[]): Promise<NonNullable<ImportResult['media']>> {
   const list = await getAllMedia();
   const indexByKey = new Map(list.map((m, i) => [mediaKey(m), i]));
   // A file exported without TMDB details has no tmdbId, so also match on id.
