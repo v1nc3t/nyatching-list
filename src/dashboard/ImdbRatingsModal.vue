@@ -4,6 +4,7 @@ import { MediaStatus } from '../types'
 import { getAllMedia, mergeMedia } from '../storage'
 import { fetchTmdbByImdbId, TMDBExternalFindResult } from '../services/tmdb'
 import { parseImdbRatings, imdbToMedia, ImdbRow } from '../services/imdb'
+import StatusSelect from './StatusSelect.vue'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -18,6 +19,8 @@ interface Item {
   group: GroupKey
   checked: boolean
   status: MediaStatus
+  /** Already tracked: shown but never imported, so progress and links are not overwritten. */
+  inList: boolean
 }
 
 const GROUPS: { key: GroupKey; label: string }[] = [
@@ -25,7 +28,6 @@ const GROUPS: { key: GroupKey; label: string }[] = [
   { key: 'ended', label: 'Ended shows' },
   { key: 'ongoing', label: 'Ongoing shows' },
 ]
-const STATUSES: MediaStatus[] = ['watching', 'waiting', 'next', 'completed', 'dropped']
 // A rating means you watched it
 const DEFAULT_STATUS: MediaStatus = 'completed'
 // shortcut: fixed pool, no retry on TMDB rate limits (a miss shows as "no TMDB match"); add backoff if big files miss often
@@ -35,7 +37,6 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const fileName = ref('')
 const items = ref<Item[]>([])
 const skipped = ref(0)
-const inList = ref(0)
 const lookedUp = ref(0)
 const lookupTotal = ref(0)
 const isLookingUp = ref(false)
@@ -59,22 +60,25 @@ onUnmounted(() => {
 const groups = computed(() =>
   GROUPS.map((g) => {
     const list = items.value.filter((item) => item.group === g.key)
-    return { ...g, list, checked: list.filter((item) => item.checked).length }
+    return {
+      ...g,
+      list,
+      checked: list.filter((item) => item.checked).length,
+      selectable: list.filter((item) => !item.inList).length,
+    }
   }).filter((g) => g.list.length)
 )
 const selectedCount = computed(() => items.value.filter((item) => item.checked).length)
+const inListCount = computed(() => items.value.filter((item) => item.inList).length)
 const summary = computed(() =>
   [
-    `${items.value.length} new`,
-    inList.value && `${inList.value} already in your list`,
+    `${items.value.length - inListCount.value} new`,
+    inListCount.value && `${inListCount.value} already in your list`,
     skipped.value && `${skipped.value} skipped (episodes and other rows)`,
   ]
     .filter(Boolean)
     .join(' · ')
 )
-
-const statusLabel = (s: MediaStatus) =>
-  s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1)
 
 const usesOneStatus = (key: GroupKey) => key === 'ongoing' && ongoingMode.value === 'all'
 const statusFor = (item: Item) => (usesOneStatus(item.group) ? ongoingStatus.value : item.status)
@@ -88,8 +92,8 @@ const setPerTitle = () => {
   if (!openGroups.value.includes('ongoing')) toggleOpen('ongoing')
 }
 
-const setGroupChecked =(key: GroupKey, checked: boolean) => {
-  for (const item of items.value) if (item.group === key) item.checked = checked
+const setGroupChecked = (key: GroupKey, checked: boolean) => {
+  for (const item of items.value) if (item.group === key && !item.inList) item.checked = checked
 }
 
 const lookUp = async (rows: ImdbRow[]): Promise<Item[]> => {
@@ -103,19 +107,19 @@ const lookUp = async (rows: ImdbRow[]): Promise<Item[]> => {
       // TMDB's type wins so the stored tmdbId points at the right endpoint
       if (tmdb) row.mediaType = tmdb.mediaType
       lookedUp.value++
-      const dupe = existing.some(
+      // Same rules as adding a title, plus the ids an earlier import would have given it
+      const titles = [row.title, tmdb?.title].map((t) => t?.toLowerCase())
+      const ids = [tmdb && `tmdb-${row.mediaType}-${tmdb.tmdbId}`, `imdb-${row.imdbId}`]
+      const inList = existing.some(
         (m) =>
           (tmdb && m.tmdbId === tmdb.tmdbId && m.mediaType === row.mediaType) ||
-          m.title.toLowerCase() === row.title.toLowerCase() ||
-          m.watchingUrl?.toLowerCase().includes(row.imdbId)
+          ids.includes(m.id) ||
+          titles.includes(m.title.toLowerCase()) ||
+          m.watchingUrl?.match(/tt\d+/)?.[0] === row.imdbId
       )
-      if (dupe) {
-        inList.value++
-        continue
-      }
       const group: GroupKey =
         row.mediaType === 'movie' ? 'movie' : tmdb?.showInfo?.ended ? 'ended' : 'ongoing'
-      found.push({ row, tmdb, group, checked: true, status: DEFAULT_STATUS })
+      found.push({ row, tmdb, group, checked: !inList, status: DEFAULT_STATUS, inList })
     }
   }
   await Promise.all(Array.from({ length: LOOKUPS_AT_ONCE }, worker))
@@ -130,7 +134,6 @@ const handleFile = async (event: Event) => {
 
   items.value = []
   message.value = ''
-  inList.value = 0
   let rows: ImdbRow[]
   try {
     const parsed = parseImdbRatings(await file.text())
@@ -203,9 +206,22 @@ const handleImport = async () => {
           </div>
         </div>
 
-        <div v-if="isLookingUp" class="file-group" role="status">
-          <p class="form-hint">Looking up titles on TMDB… {{ lookedUp }} / {{ lookupTotal }}</p>
-          <progress class="lookup-bar" :value="lookedUp" :max="lookupTotal" />
+        <div v-if="isLookingUp" class="lookup" role="status">
+          <div class="lookup-head">
+            <span class="spinner" aria-hidden="true" />
+            <span>Looking up titles on TMDB</span>
+            <span class="check-meta">{{ lookedUp }} / {{ lookupTotal }}</span>
+          </div>
+          <div
+            class="lookup-track"
+            role="progressbar"
+            aria-label="Titles looked up"
+            :aria-valuenow="lookedUp"
+            :aria-valuemax="lookupTotal"
+          >
+            <div class="lookup-fill" :style="{ width: `${(lookedUp / lookupTotal) * 100}%` }" />
+          </div>
+          <p class="form-hint">Big files take a minute.</p>
         </div>
 
         <template v-else-if="fileName">
@@ -216,9 +232,10 @@ const handleImport = async () => {
               <input
                 type="checkbox"
                 :aria-label="`Select all ${g.label}`"
-                :checked="g.checked === g.list.length"
-                :indeterminate="g.checked > 0 && g.checked < g.list.length"
-                @change="setGroupChecked(g.key, g.checked < g.list.length)"
+                :disabled="!g.selectable"
+                :checked="!!g.selectable && g.checked === g.selectable"
+                :indeterminate="g.checked > 0 && g.checked < g.selectable"
+                @change="setGroupChecked(g.key, g.checked < g.selectable)"
               />
               <button
                 type="button"
@@ -227,7 +244,7 @@ const handleImport = async () => {
                 @click="toggleOpen(g.key)"
               >
                 <span>{{ g.label }}</span>
-                <span class="check-meta">{{ g.checked }} of {{ g.list.length }}</span>
+                <span class="check-meta">{{ g.checked }} of {{ g.selectable }}</span>
                 <svg viewBox="0 0 512 512" class="arrow" aria-hidden="true">
                   <path
                     d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
@@ -257,33 +274,33 @@ const handleImport = async () => {
                   Per title
                 </button>
               </div>
-              <select
+              <StatusSelect
                 v-if="ongoingMode === 'all'"
                 v-model="ongoingStatus"
-                class="status-select"
-                aria-label="Status for all ongoing shows"
-              >
-                <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
-              </select>
+                label="Status for all ongoing shows"
+              />
             </div>
 
             <div v-if="openGroups.includes(g.key)" class="pick-scroll">
-              <div v-for="item in g.list" :key="item.row.imdbId" class="pick-row">
+              <div
+                v-for="item in g.list"
+                :key="item.row.imdbId"
+                class="pick-row"
+                :class="{ 'is-in-list': item.inList }"
+              >
                 <label class="pick-main">
-                  <input v-model="item.checked" type="checkbox" />
+                  <input v-model="item.checked" type="checkbox" :disabled="item.inList" />
                   <span class="pick-text">
                     <span class="pick-title">{{ item.row.title }}</span>
-                    <small v-if="!item.tmdb" class="form-hint">No TMDB match</small>
+                    <small v-if="item.inList" class="form-hint">Already in your list</small>
+                    <small v-else-if="!item.tmdb" class="form-hint">No TMDB match</small>
                   </span>
                 </label>
-                <select
-                  v-if="!usesOneStatus(g.key)"
+                <StatusSelect
+                  v-if="!usesOneStatus(g.key) && !item.inList"
                   v-model="item.status"
-                  class="status-select"
-                  :aria-label="`Status for ${item.row.title}`"
-                >
-                  <option v-for="s in STATUSES" :key="s" :value="s">{{ statusLabel(s) }}</option>
-                </select>
+                  :label="`Status for ${item.row.title}`"
+                />
               </div>
             </div>
           </section>
@@ -387,10 +404,54 @@ const handleImport = async () => {
   color: var(--text-secondary);
 }
 
-.lookup-bar {
-  width: 100%;
-  height: 6px;
-  accent-color: var(--accent);
+.lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--border);
+}
+
+.lookup-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.spinner {
+  flex-shrink: 0;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50% !important;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lookup-track {
+  height: 4px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.lookup-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 .form-hint {
@@ -459,6 +520,15 @@ const handleImport = async () => {
 
 .pick-row:hover {
   background: var(--bg-input);
+}
+
+.pick-row.is-in-list {
+  opacity: 0.55;
+}
+
+.pick-row.is-in-list .pick-main,
+.pick-row input:disabled {
+  cursor: default;
 }
 
 .pick-row-all {
@@ -536,18 +606,6 @@ const handleImport = async () => {
   font-size: 0.78rem;
   font-weight: 500;
   color: var(--text-muted);
-}
-
-.status-select {
-  flex-shrink: 0;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  font-family: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 0.25rem 0.35rem;
-  cursor: pointer;
 }
 
 .backup-message {
