@@ -43,6 +43,13 @@ const isImporting = ref(false)
 const message = ref('')
 const ongoingMode = ref<'all' | 'each'>('all')
 const ongoingStatus = ref<MediaStatus>(DEFAULT_STATUS)
+const openGroups = ref<GroupKey[]>([])
+
+const toggleOpen = (key: GroupKey) => {
+  openGroups.value = openGroups.value.includes(key)
+    ? openGroups.value.filter((k) => k !== key)
+    : [...openGroups.value, key]
+}
 
 let cancelled = false
 onUnmounted(() => {
@@ -78,6 +85,7 @@ const setPerTitle = () => {
     for (const item of items.value) if (item.group === 'ongoing') item.status = ongoingStatus.value
   }
   ongoingMode.value = 'each'
+  if (!openGroups.value.includes('ongoing')) toggleOpen('ongoing')
 }
 
 const setGroupChecked =(key: GroupKey, checked: boolean) => {
@@ -204,16 +212,29 @@ const handleImport = async () => {
           <p class="form-hint">{{ summary }}</p>
 
           <section v-for="g in groups" :key="g.key" class="group" :aria-label="g.label">
-            <label class="pick-row pick-row-all">
+            <div class="pick-row pick-row-all" :class="{ 'is-open': openGroups.includes(g.key) }">
               <input
                 type="checkbox"
+                :aria-label="`Select all ${g.label}`"
                 :checked="g.checked === g.list.length"
                 :indeterminate="g.checked > 0 && g.checked < g.list.length"
                 @change="setGroupChecked(g.key, g.checked < g.list.length)"
               />
-              <span>{{ g.label }}</span>
-              <span class="check-meta">{{ g.checked }} of {{ g.list.length }}</span>
-            </label>
+              <button
+                type="button"
+                class="group-toggle"
+                :aria-expanded="openGroups.includes(g.key)"
+                @click="toggleOpen(g.key)"
+              >
+                <span>{{ g.label }}</span>
+                <span class="check-meta">{{ g.checked }} of {{ g.list.length }}</span>
+                <svg viewBox="0 0 512 512" class="arrow" aria-hidden="true">
+                  <path
+                    d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
+                  />
+                </svg>
+              </button>
+            </div>
 
             <div v-if="g.key === 'ongoing'" class="ongoing-status">
               <div class="chips" role="group" aria-label="How to set ongoing show statuses">
@@ -246,7 +267,7 @@ const handleImport = async () => {
               </select>
             </div>
 
-            <div class="pick-scroll">
+            <div v-if="openGroups.includes(g.key)" class="pick-scroll">
               <div v-for="item in g.list" :key="item.row.imdbId" class="pick-row">
                 <label class="pick-main">
                   <input v-model="item.checked" type="checkbox" />
@@ -387,7 +408,7 @@ const handleImport = async () => {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  padding: 0.4rem 0.6rem 0.6rem;
+  padding: 0.4rem 0.6rem;
 }
 
 .ongoing-status {
@@ -445,9 +466,39 @@ const handleImport = async () => {
 
 .pick-row-all {
   font-weight: 600;
-  cursor: pointer;
+}
+
+.pick-row-all.is-open {
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.25rem;
+}
+
+.group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.arrow {
+  flex-shrink: 0;
+  width: 12px;
+  height: 10px;
+  fill: currentColor;
+  transform: rotate(-90deg);
+  transition: transform 200ms ease;
+}
+
+.is-open .arrow {
+  transform: rotate(0deg);
 }
 
 .pick-main {
