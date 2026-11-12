@@ -47,12 +47,12 @@ export const parseCsv = (text: string): string[][] => {
   return rows
 }
 
-/** Reads an IMDb ratings export. Skipped counts rows that are episodes, games or broken. */
-export const parseImdbRatings = (text: string): { rows: ImdbRow[]; skipped: number } => {
+/** Reads an IMDb ratings or watchlist export. Skipped counts rows that are episodes, games or broken. */
+export const parseImdbList = (text: string): { rows: ImdbRow[]; skipped: number } => {
   const [header = [], ...lines] = parseCsv(text.replace(/^﻿/, ''))
   const col = (name: string) => header.indexOf(name)
   const [iConst, iTitle, iType, iYear, iRuntime] = ['Const', 'Title', 'Title Type', 'Year', 'Runtime (mins)'].map(col)
-  if (iConst < 0 || iTitle < 0 || iType < 0) throw new Error('This is not an IMDb ratings file.')
+  if (iConst < 0 || iTitle < 0 || iType < 0) throw new Error('This is not an IMDb ratings or watchlist export.')
 
   const rows: ImdbRow[] = []
   let skipped = 0
@@ -135,7 +135,7 @@ const selfCheckImdb = (): void => {
     'tt3,7,An Episode,TV Episode,40,2020\n' +
     'bad,7,Broken,Movie,90,2020\n' +
     '\n'
-  const { rows, skipped } = parseImdbRatings(csv)
+  const { rows, skipped } = parseImdbList(csv)
   if (rows.length !== 2 || skipped !== 2) throw new Error('imdb: keeps movies and shows, skips the rest')
   if (rows[0].title !== 'Dune, Part "Two"' || rows[0].runtimeMinutes !== 166) {
     throw new Error('imdb: reads quoted fields')

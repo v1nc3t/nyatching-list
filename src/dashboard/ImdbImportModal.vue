@@ -3,15 +3,24 @@ import { ref, computed, onUnmounted } from 'vue'
 import { MediaStatus } from '../types'
 import { getAllMedia, mergeMedia } from '../storage'
 import { fetchTmdbByImdbId, TMDBExternalFindResult } from '../services/tmdb'
-import { parseImdbRatings, imdbToMedia, ImdbRow } from '../services/imdb'
+import { parseImdbList, imdbToMedia, ImdbRow } from '../services/imdb'
 import StatusSelect from './StatusSelect.vue'
 
+const props = defineProps<{ list: 'ratings' | 'watchlist' }>()
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'imported'): void
 }>()
 
-type GroupKey = 'movie' | 'ended' | 'ongoing'
+type GroupKey = 'movie' | 'ended' | 'ongoing' | 'show'
+
+interface ListSetup {
+  title: string
+  status: MediaStatus
+  /** The group that can share one status. */
+  bulkGroup: GroupKey
+  groups: { key: GroupKey; label: string }[]
+}
 
 interface Item {
   row: ImdbRow
@@ -23,13 +32,30 @@ interface Item {
   inList: boolean
 }
 
-const GROUPS: { key: GroupKey; label: string }[] = [
-  { key: 'movie', label: 'Movies' },
-  { key: 'ended', label: 'Ended shows' },
-  { key: 'ongoing', label: 'Ongoing shows' },
-]
-// A rating means you watched it
-const DEFAULT_STATUS: MediaStatus = 'completed'
+const SETUP: Record<typeof props.list, ListSetup> = {
+  // A rating means you watched it
+  ratings: {
+    title: 'IMDb ratings',
+    status: 'completed',
+    bulkGroup: 'ongoing',
+    groups: [
+      { key: 'movie', label: 'Movies' },
+      { key: 'ended', label: 'Ended shows' },
+      { key: 'ongoing', label: 'Ongoing shows' },
+    ],
+  },
+  // A watchlist is what you plan to watch
+  watchlist: {
+    title: 'IMDb watchlist',
+    status: 'next',
+    bulkGroup: 'show',
+    groups: [
+      { key: 'movie', label: 'Movies' },
+      { key: 'show', label: 'Shows' },
+    ],
+  },
+}
+const setup = SETUP[props.list]
 // shortcut: fixed pool, no retry on TMDB rate limits (a miss shows as "no TMDB match"); add backoff if big files miss often
 const LOOKUPS_AT_ONCE = 5
 
@@ -42,8 +68,8 @@ const lookupTotal = ref(0)
 const isLookingUp = ref(false)
 const isImporting = ref(false)
 const message = ref('')
-const ongoingMode = ref<'all' | 'each'>('all')
-const ongoingStatus = ref<MediaStatus>(DEFAULT_STATUS)
+const bulkMode = ref<'all' | 'each'>('all')
+const bulkStatus = ref<MediaStatus>(setup.status)
 const openGroups = ref<GroupKey[]>([])
 
 const toggleOpen = (key: GroupKey) => {
@@ -58,7 +84,7 @@ onUnmounted(() => {
 })
 
 const groups = computed(() =>
-  GROUPS.map((g) => {
+  setup.groups.map((g) => {
     const list = items.value.filter((item) => item.group === g.key)
     return {
       ...g,
@@ -80,16 +106,16 @@ const summary = computed(() =>
     .join(' · ')
 )
 
-const usesOneStatus = (key: GroupKey) => key === 'ongoing' && ongoingMode.value === 'all'
-const statusFor = (item: Item) => (usesOneStatus(item.group) ? ongoingStatus.value : item.status)
+const usesOneStatus = (key: GroupKey) => key === setup.bulkGroup && bulkMode.value === 'all'
+const statusFor = (item: Item) => (usesOneStatus(item.group) ? bulkStatus.value : item.status)
 
 // Per title starts from the status picked for all
 const setPerTitle = () => {
-  if (ongoingMode.value === 'all') {
-    for (const item of items.value) if (item.group === 'ongoing') item.status = ongoingStatus.value
+  if (bulkMode.value === 'all') {
+    for (const item of items.value) if (item.group === setup.bulkGroup) item.status = bulkStatus.value
   }
-  ongoingMode.value = 'each'
-  if (!openGroups.value.includes('ongoing')) toggleOpen('ongoing')
+  bulkMode.value = 'each'
+  if (!openGroups.value.includes(setup.bulkGroup)) toggleOpen(setup.bulkGroup)
 }
 
 const setGroupChecked = (key: GroupKey, checked: boolean) => {
@@ -118,8 +144,14 @@ const lookUp = async (rows: ImdbRow[]): Promise<Item[]> => {
           m.watchingUrl?.match(/tt\d+/)?.[0] === row.imdbId
       )
       const group: GroupKey =
-        row.mediaType === 'movie' ? 'movie' : tmdb?.showInfo?.ended ? 'ended' : 'ongoing'
-      found.push({ row, tmdb, group, checked: !inList, status: DEFAULT_STATUS, inList })
+        row.mediaType === 'movie'
+          ? 'movie'
+          : props.list === 'watchlist'
+            ? 'show'
+            : tmdb?.showInfo?.ended
+              ? 'ended'
+              : 'ongoing'
+      found.push({ row, tmdb, group, checked: !inList, status: setup.status, inList })
     }
   }
   await Promise.all(Array.from({ length: LOOKUPS_AT_ONCE }, worker))
@@ -136,7 +168,7 @@ const handleFile = async (event: Event) => {
   message.value = ''
   let rows: ImdbRow[]
   try {
-    const parsed = parseImdbRatings(await file.text())
+    const parsed = parseImdbList(await file.text())
     rows = parsed.rows
     skipped.value = parsed.skipped
   } catch (error) {
@@ -183,15 +215,15 @@ const handleImport = async () => {
   <div class="modal-overlay" @click.self="emit('close')">
     <div class="modal-card">
       <div class="modal-header">
-        <h4>IMDb ratings</h4>
-        <button type="button" class="close-btn" aria-label="Close IMDb ratings" @click="emit('close')">
+        <h4>{{ setup.title }}</h4>
+        <button type="button" class="close-btn" :aria-label="`Close ${setup.title}`" @click="emit('close')">
           ✕
         </button>
       </div>
 
       <div class="modal-body">
         <div class="file-group">
-          <p class="form-hint">Choose the ratings CSV you exported from IMDb.</p>
+          <p class="form-hint">Choose the {{ list }} CSV you exported from IMDb.</p>
           <div class="file-row">
             <button
               type="button"
@@ -253,31 +285,31 @@ const handleImport = async () => {
               </button>
             </div>
 
-            <div v-if="g.key === 'ongoing'" class="ongoing-status">
-              <div class="chips" role="group" aria-label="How to set ongoing show statuses">
+            <div v-if="g.key === setup.bulkGroup" class="bulk-status">
+              <div class="chips" role="group" :aria-label="`How to set statuses for ${g.label}`">
                 <button
                   type="button"
                   class="chip"
-                  :class="{ active: ongoingMode === 'all' }"
-                  :aria-pressed="ongoingMode === 'all'"
-                  @click="ongoingMode = 'all'"
+                  :class="{ active: bulkMode === 'all' }"
+                  :aria-pressed="bulkMode === 'all'"
+                  @click="bulkMode = 'all'"
                 >
                   One status for all
                 </button>
                 <button
                   type="button"
                   class="chip"
-                  :class="{ active: ongoingMode === 'each' }"
-                  :aria-pressed="ongoingMode === 'each'"
+                  :class="{ active: bulkMode === 'each' }"
+                  :aria-pressed="bulkMode === 'each'"
                   @click="setPerTitle"
                 >
                   Per title
                 </button>
               </div>
               <StatusSelect
-                v-if="ongoingMode === 'all'"
-                v-model="ongoingStatus"
-                label="Status for all ongoing shows"
+                v-if="bulkMode === 'all'"
+                v-model="bulkStatus"
+                :label="`Status for all ${g.label}`"
               />
             </div>
 
@@ -469,7 +501,7 @@ const handleImport = async () => {
   padding: 0.4rem 0.6rem;
 }
 
-.ongoing-status {
+.bulk-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
