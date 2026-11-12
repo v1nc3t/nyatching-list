@@ -273,10 +273,7 @@ const handleImport = async () => {
                   <input v-model="item.checked" type="checkbox" />
                   <span class="pick-text">
                     <span class="pick-title">{{ item.row.title }}</span>
-                    <small class="form-hint">
-                      {{ item.row.mediaType }}{{ item.row.year ? ` · ${item.row.year}` : ''
-                      }}{{ item.tmdb ? '' : ' · no TMDB match' }}
-                    </small>
+                    <small v-if="!item.tmdb" class="form-hint">No TMDB match</small>
                   </span>
                 </label>
                 <select
