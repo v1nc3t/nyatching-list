@@ -1,11 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue'
-import browser from 'webextension-polyfill'
 import { AppSettings } from '../types'
-import { getSettings, saveSettings, ImportResult } from '../storage'
-import { scheduleReleaseCheckAlarm } from '../background/alarm-schedule'
-import ExportModal from './ExportModal.vue'
-import ImportModal from './ImportModal.vue'
+import { getSettings, saveSettings } from '../storage'
+import { notifySettingsUpdated } from '../background/alarm-schedule'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -13,8 +10,6 @@ const emit = defineEmits<{
 
 const isSaving = ref(false)
 const openMenu = ref<'episode' | 'reminder' | null>(null)
-const showExport = ref(false)
-const showImport = ref(false)
 
 const settings = ref<AppSettings>({
   newSeasonCheckIntervalHours: 24,
@@ -72,29 +67,11 @@ const selectInterval = (key: 'episode' | 'reminder', val: number) => {
 
 // ---------- Save ----------
 
-const notifyBackground = async (saved: AppSettings) => {
-  try {
-    await browser.runtime.sendMessage({
-      type: 'SETTINGS_UPDATED',
-      settings: saved,
-    })
-  } catch (error) {
-    console.error('[Nyatching List] Background did not acknowledge settings:', error)
-    await scheduleReleaseCheckAlarm(saved)
-  }
-}
-
-const handleImported = async (result: ImportResult) => {
-  if (!result.settings) return
-  settings.value = result.settings
-  await notifyBackground(result.settings)
-}
-
 const handleSave = async () => {
   isSaving.value = true
   try {
     const saved = await saveSettings({ ...settings.value })
-    await notifyBackground(saved)
+    await notifySettingsUpdated(saved)
     emit('close')
   } catch (error) {
     console.error('[Nyatching List] Failed to save settings:', error)
@@ -136,15 +113,6 @@ const handleSave = async () => {
             </div>
           </div>
         </div>
-
-        <div class="form-group">
-          <label>Backup</label>
-          <p class="form-hint">Save your data to a JSON file or restore it.</p>
-          <div class="backup-actions">
-            <button type="button" class="secondary-btn" @click="showExport = true">Export…</button>
-            <button type="button" class="secondary-btn" @click="showImport = true">Import…</button>
-          </div>
-        </div>
       </div>
 
       <div class="modal-actions">
@@ -154,11 +122,6 @@ const handleSave = async () => {
         </button>
       </div>
     </div>
-
-    <Teleport to="body">
-      <ExportModal v-if="showExport" @close="showExport = false" />
-      <ImportModal v-if="showImport" @close="showImport = false" @imported="handleImported" />
-    </Teleport>
   </div>
 </template>
 
@@ -334,12 +297,6 @@ const handleSave = async () => {
   background-color: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
-}
-
-.backup-actions {
-  display: flex;
-  gap: 0.65rem;
-  margin-top: 0.2rem;
 }
 
 .modal-actions {

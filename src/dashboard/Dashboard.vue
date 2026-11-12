@@ -22,6 +22,7 @@ import {
 import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
 import SettingsModal from './Settings.vue'
+import DataModal from './DataModal.vue'
 import WatchLinkModal from './WatchLinkModal.vue'
 import {
   getAiredEpisodeCountForSeason,
@@ -41,6 +42,7 @@ const { theme, toggleTheme } = useTheme()
 
 // Settings & Notification Drawer State
 const isSettingsOpen = ref(false)
+const isDataOpen = ref(false)
 const isNotificationsOpen = ref(false)
 const openSelectKey = ref<string | null>(null)
 const notificationLogs = ref<NotificationItem[]>([])
@@ -398,6 +400,19 @@ const stopTitleMarquee = (event: Event) => {
             </span>
           </button>
 
+          <!-- Import / Export Button -->
+          <button
+            type="button"
+            class="icon-btn"
+            @click="isDataOpen = true"
+            aria-label="Import / Export"
+            title="Import / Export"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4" />
+            </svg>
+          </button>
+
           <!-- Notification Settings Button -->
           <button
             type="button"
@@ -447,6 +462,7 @@ const stopTitleMarquee = (event: Event) => {
           v-if="isSettingsOpen"
           @close="isSettingsOpen = false"
         />
+        <DataModal v-if="isDataOpen" @close="isDataOpen = false" />
         <WatchLinkModal v-if="linkEditItem" :item="linkEditItem" @close="linkEditItem = null" />
       </div>
     </header>
@@ -824,10 +840,6 @@ const stopTitleMarquee = (event: Event) => {
       <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="githubLink" target="_blank" rel="noopener noreferrer" class="footer-link">
         source
-      </a>
-      <span class="footer-divider" aria-hidden="true">|</span>
-      <a :href="githubLink + '/discussions'" target="_blank" rel="noopener noreferrer" class="footer-link">
-        discussions
       </a>
       <span class="footer-divider" aria-hidden="true">|</span>
       <a :href="supportLink" target="_blank" rel="noopener noreferrer" class="footer-link">

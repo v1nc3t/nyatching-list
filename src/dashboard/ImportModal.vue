@@ -33,23 +33,6 @@ const exportedOn = computed(() => {
   return isNaN(date.getTime()) ? raw : date.toLocaleDateString()
 })
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
-
-const describeImport = (result: ImportResult): string => {
-  const parts: string[] = []
-  if (result.media) {
-    const { added, updated, skipped } = result.media
-    parts.push(
-      `${plural(added, 'title')} added, ${updated} updated` + (skipped ? `, ${skipped} skipped` : '')
-    )
-  }
-  if (result.settings) parts.push('settings applied')
-  if (result.notificationsAdded !== undefined) {
-    parts.push(`${plural(result.notificationsAdded, 'notification')} added`)
-  }
-  return parts.join(', ')
-}
-
 const handleFile = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -70,9 +53,7 @@ const handleImport = async () => {
   if (!backup.value) return
   isImporting.value = true
   try {
-    const result = await importBackup(backup.value, choice.value)
-    message.value = `Imported: ${describeImport(result)}.`
-    emit('imported', result)
+    emit('imported', await importBackup(backup.value, choice.value))
   } catch (error) {
     console.error('[Nyatching List] Import failed:', error)
     message.value = (error as Error).message

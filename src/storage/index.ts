@@ -348,6 +348,8 @@ export interface MediaFilter {
   statuses: MediaStatus[];
   /** Field groups left out of each title. Empty = all fields. */
   excludeFields: MediaFieldGroup[];
+  /** Titles the user unchecked. */
+  excludeIds: string[];
 }
 
 export interface ExportChoice {
@@ -391,7 +393,7 @@ export async function exportBackup(choice: ExportChoice): Promise<Backup> {
       (g) => g.fields
     );
     backup.media = (await getAllMedia())
-      .filter((item) => matchesMediaFilter(item, filter))
+      .filter((item) => matchesMediaFilter(item, filter) && !filter.excludeIds.includes(item.id))
       .map((item) => {
         const copy: Record<string, unknown> = { ...item };
         for (const key of dropped) delete copy[key];
@@ -447,7 +449,7 @@ const mediaKey = (m: Pick<TrackedMedia, 'id' | 'mediaType' | 'tmdbId'>): string 
   m.tmdbId ? `${m.mediaType}:${m.tmdbId}` : m.id;
 
 /** Never removes titles; when a title is in both, the newer copy wins field by field (fields missing from the file keep their value). */
-async function mergeMedia(items: unknown[]): Promise<NonNullable<ImportResult['media']>> {
+export async function mergeMedia(items: unknown[]): Promise<NonNullable<ImportResult['media']>> {
   const list = await getAllMedia();
   const indexByKey = new Map(list.map((m, i) => [mediaKey(m), i]));
   // A file exported without TMDB details has no tmdbId, so also match on id.

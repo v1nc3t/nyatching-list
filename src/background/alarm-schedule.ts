@@ -63,7 +63,17 @@ export const scheduleReleaseCheckAlarm = async (
   return { when }
 }
 
-export const isMissedScheduledCheck = (settings: AppSettings, now: number = Date.now()): boolean => {
+// Ask the background to reschedule; reschedule here if it does not answer.
+export const notifySettingsUpdated = async (settings: AppSettings): Promise<void> => {
+  try {
+    await browser.runtime.sendMessage({ type: 'SETTINGS_UPDATED', settings })
+  } catch (error) {
+    console.error('[Nyatching List] Background did not acknowledge settings:', error)
+    await scheduleReleaseCheckAlarm(settings)
+  }
+}
+
+export const isMissedScheduledCheck =(settings: AppSettings, now: number = Date.now()): boolean => {
   return shouldCatchUpMissedCheck(
     settings.newSeasonCheckIntervalHours ?? 24,
     settings.lastReleaseCheckAt,

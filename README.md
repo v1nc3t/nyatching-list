@@ -36,11 +36,12 @@ Not available on iOS. Firefox and Chrome on iPhone cannot run this add-on.
 - **Progress tracking:** Track season/episode for shows, and minutes watched for movies
 - **Search:** Find titles with autocomplete powered by [TMDB](https://www.themoviedb.org/)
 - **IMDb quick add:** Open the extension on an IMDb title page to pre-fill the form
+- **IMDb import:** Load the ratings or watchlist CSV you export from IMDb, pick which titles to add, and set each status or one status for a whole group. Ratings split into movies, ended shows and ongoing shows (completed by default); a watchlist splits into movies and shows (next up by default). Titles already in your list are shown but left alone
 - **Dashboard:** Browse, filter, and manage your full list in a dedicated tab
 - **Notifications:** Desktop alerts when a new episode or season is out
 - **Dark / light theme:** Switch themes from the popup or dashboard
 - **Local storage:** Your list stays on your device
-- **Backup:** Export your list, settings, or notification history to JSON and import it back, from dashboard settings. Pick titles by type and status (all, only some, or all except some), leave out fields you don't need, and choose what to import
+- **Backup:** Export your list, settings, or notification history to JSON and import it back, from the Import / Export button in the dashboard top bar. Pick titles by type and status (all, only some, or all except some), leave out fields you don't need, and choose what to import
 
 ---
 
