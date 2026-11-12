@@ -196,7 +196,7 @@ Movie and TV metadata and posters come from [The Movie Database (TMDB)](https://
 ## Support
 
 - GitHub: [v1nc3t/nyatching-list](https://github.com/v1nc3t/nyatching-list)
-- Support the developer: [buymeacoffee.com/v1c3nt](https://buymeacoffee.com/v1c3nt)
+- Support the developer: [ko-fi.com/v1nc3t](https://ko-fi.com/v1nc3t)
 
 ---
 
