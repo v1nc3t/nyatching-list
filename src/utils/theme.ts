@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import browser from 'webextension-polyfill'
 import { THEME_STORAGE_KEY } from '../storage'
 
@@ -11,6 +11,41 @@ export function applyThemeToDocument(theme: Theme): void {
   if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('theme-dark', theme === 'dark')
   document.documentElement.classList.toggle('theme-light', theme === 'light')
+}
+
+/**
+ * Runs the theme swap as a circle that grows from the toggle button to cover the page.
+ * Browsers without view transitions, and reduced motion, swap at once.
+ * Resolves once the swap has run.
+ */
+function revealTheme(origin: Element | null, swap: () => void): Promise<void> {
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  if (!origin || reduceMotion || !document.startViewTransition) {
+    swap()
+    return Promise.resolve()
+  }
+
+  const box = origin.getBoundingClientRect()
+  const x = box.left + box.width / 2
+  const y = box.top + box.height / 2
+  // Distance to the farthest corner, so the circle ends covering the whole page
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
+
+  const transition = document.startViewTransition(async () => {
+    swap()
+    await nextTick()
+  })
+  transition.ready
+    .then(() => {
+      document.documentElement.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+        { duration: 500, easing: 'ease-in-out', pseudoElement: '::view-transition-new(root)' }
+      )
+    })
+    .catch(() => {
+      // Skipped transition: the theme is already swapped
+    })
+  return transition.updateCallbackDone
 }
 
 /**
@@ -59,10 +94,14 @@ export function useTheme() {
   }
 
   // 3. Save theme changes to extension storage when toggled
-  const toggleTheme = async () => {
+  const toggleTheme = async (event?: MouseEvent) => {
     const nextTheme: Theme = theme.value === 'dark' ? 'light' : 'dark'
-    theme.value = nextTheme
-    applyThemeToDocument(nextTheme)
+    // Save only after the swap: the storage listener above would otherwise apply the
+    // theme outside the animation, and the page flashes the new color first
+    await revealTheme((event?.currentTarget as Element | null) ?? null, () => {
+      theme.value = nextTheme
+      applyThemeToDocument(nextTheme)
+    })
 
     try {
       await browser.storage.local.set({ [THEME_STORAGE_KEY]: nextTheme })

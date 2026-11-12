@@ -101,3 +101,10 @@ input[type='number'] {
 #title-input::placeholder {
   text-transform: lowercase !important;
 }
+
+/* Theme toggle grows the new theme as a circle (utils/theme.ts), so drop the default cross-fade */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
