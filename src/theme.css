@@ -108,3 +108,23 @@ input[type='number'] {
   animation: none;
   mix-blend-mode: normal;
 }
+
+:root.theme-switching::view-transition-new(root) {
+  animation: theme-reveal 800ms cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
+  to {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+}
+
+/* Element color transitions would fade inside the new snapshot and smear the circle edge */
+:root.theme-switching *,
+:root.theme-switching *::before,
+:root.theme-switching *::after {
+  transition: none !important;
+}

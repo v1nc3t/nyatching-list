@@ -31,20 +31,20 @@ function revealTheme(origin: Element | null, swap: () => void): Promise<void> {
   // Distance to the farthest corner, so the circle ends covering the whole page
   const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
 
+  // The reveal is a CSS keyframe (theme.css) so it runs from the first frame;
+  // starting it from JS after `ready` let Firefox paint the uncovered new theme first
+  const root = document.documentElement
+  root.style.setProperty('--reveal-x', `${x}px`)
+  root.style.setProperty('--reveal-y', `${y}px`)
+  root.style.setProperty('--reveal-r', `${radius}px`)
+  root.classList.add('theme-switching')
+
   const transition = document.startViewTransition(async () => {
     swap()
     await nextTick()
   })
-  transition.ready
-    .then(() => {
-      document.documentElement.animate(
-        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
-        { duration: 500, easing: 'ease-in-out', pseudoElement: '::view-transition-new(root)' }
-      )
-    })
-    .catch(() => {
-      // Skipped transition: the theme is already swapped
-    })
+  const cleanup = () => root.classList.remove('theme-switching')
+  transition.finished.then(cleanup, cleanup)
   return transition.updateCallbackDone
 }
 
