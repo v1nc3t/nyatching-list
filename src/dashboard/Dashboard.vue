@@ -183,6 +183,12 @@ const handlePosterError = (id: string) => {
 
 // Metrics
 const STATUS_FILTERS: (MediaStatus | 'all')[] = ['all', 'watching', 'waiting', 'next', 'completed', 'dropped']
+const STAT_CARDS: { status: MediaStatus | 'all'; label: string }[] = [
+  { status: 'all', label: 'Total Media' },
+  { status: 'watching', label: 'Currently Watching' },
+  { status: 'completed', label: 'Completed' },
+  { status: 'waiting', label: 'Currently Waiting' },
+]
 const stats = computed(() => {
   const counts: Record<MediaStatus | 'all', number> = {
     all: mediaList.value.length,
@@ -546,16 +552,16 @@ const stopTitleMarquee = (event: Event) => {
       <!-- Overview Metrics Cards -->
       <section class="stats-row">
         <button
-          v-for="st in STATUS_FILTERS"
-          :key="st"
+          v-for="card in STAT_CARDS"
+          :key="card.status"
           type="button"
           class="stat-card"
-          :class="{ active: statusFilter === st }"
-          :aria-pressed="statusFilter === st"
-          @click="statusFilter = statusFilter === st ? 'all' : st"
+          :class="{ active: statusFilter === card.status }"
+          :aria-pressed="statusFilter === card.status"
+          @click="statusFilter = statusFilter === card.status ? 'all' : card.status"
         >
-          <span class="stat-label">{{ st === 'all' ? 'All' : formatStatus(st) }}</span>
-          <span class="stat-value">{{ stats[st] }}</span>
+          <span class="stat-label">{{ card.label }}</span>
+          <span class="stat-value">{{ stats[card.status] }}</span>
         </button>
       </section>
 
@@ -1141,7 +1147,7 @@ html, body {
 /* Stats Row */
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1.15rem;
   margin-bottom: 2.25rem;
 }
@@ -1997,7 +2003,7 @@ html, body {
   }
 
   .stats-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.65rem;
     margin-bottom: 1.25rem;
   }
