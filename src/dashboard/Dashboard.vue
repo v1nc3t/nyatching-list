@@ -182,13 +182,24 @@ const handlePosterError = (id: string) => {
 }
 
 // Metrics
+const STATUS_FILTERS: (MediaStatus | 'all')[] = ['all', 'watching', 'waiting', 'next', 'completed', 'dropped']
+const STAT_CARDS: { status: MediaStatus | 'all'; label: string }[] = [
+  { status: 'all', label: 'Total Media' },
+  { status: 'watching', label: 'Currently Watching' },
+  { status: 'completed', label: 'Completed' },
+  { status: 'waiting', label: 'Currently Waiting' },
+]
 const stats = computed(() => {
-  const total = mediaList.value.length
-  const watching = mediaList.value.filter((i) => i.status === 'watching').length
-  const waiting = mediaList.value.filter((i) => i.status === 'waiting').length
-  const completed = mediaList.value.filter((i) => i.status === 'completed').length
-
-  return { total, watching, waiting, completed }
+  const counts: Record<MediaStatus | 'all', number> = {
+    all: mediaList.value.length,
+    watching: 0,
+    waiting: 0,
+    next: 0,
+    completed: 0,
+    dropped: 0,
+  }
+  for (const item of mediaList.value) counts[item.status]++
+  return counts
 })
 
 // Filtering & Sorting
@@ -540,22 +551,18 @@ const stopTitleMarquee = (event: Event) => {
     <main class="content">
       <!-- Overview Metrics Cards -->
       <section class="stats-row">
-        <div class="stat-card">
-          <span class="stat-label">Total Media</span>
-          <span class="stat-value">{{ stats.total }}</span>
-        </div>
-        <div class="stat-card accent">
-          <span class="stat-label">Currently Watching</span>
-          <span class="stat-value">{{ stats.watching }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Completed</span>
-          <span class="stat-value">{{ stats.completed }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Currently Waiting</span>
-          <span class="stat-value">{{ stats.waiting }}</span>
-        </div>
+        <button
+          v-for="card in STAT_CARDS"
+          :key="card.status"
+          type="button"
+          class="stat-card"
+          :class="{ active: statusFilter === card.status }"
+          :aria-pressed="statusFilter === card.status"
+          @click="statusFilter = statusFilter === card.status ? 'all' : card.status"
+        >
+          <span class="stat-label">{{ card.label }}</span>
+          <span class="stat-value">{{ stats[card.status] }}</span>
+        </button>
       </section>
 
       <!-- Toolbar Search & Controls -->
@@ -596,7 +603,7 @@ const stopTitleMarquee = (event: Event) => {
             </div>
             <div class="options">
               <label
-                v-for="st in (['all', 'watching', 'waiting', 'next', 'completed', 'dropped'] as (MediaStatus | 'all')[])"
+                v-for="st in STATUS_FILTERS"
                 :key="st"
                 class="option-item"
                 :class="{ active: statusFilter === st }"
@@ -1153,10 +1160,19 @@ html, body {
   padding: 0.85rem 0;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
 }
 
-.stat-card.accent {
-  border: none;
+.stat-card:hover .stat-label {
+  color: var(--text-primary);
+}
+
+.stat-card.active {
+  border-top-color: var(--accent);
 }
 
 .stat-label {
@@ -1174,7 +1190,7 @@ html, body {
   margin-top: 0.35rem;
 }
 
-.stat-card.accent .stat-value {
+.stat-card.active .stat-value {
   color: var(--accent);
 }
 
