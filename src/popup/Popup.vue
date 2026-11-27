@@ -1,10 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import browser from 'webextension-polyfill'
-import { MediaStatus, TrackedMedia, Show, isShow } from '../types'
-import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
+import { MediaStatus, TrackedMedia, Show, NotificationItem, isShow } from '../types'
+import {
+  getAllMedia,
+  addMedia,
+  onMediaStorageChange,
+  AddMediaInput,
+  getNotificationLog,
+  deleteNotificationLogItem,
+  clearAllNotificationLogs,
+} from '../storage'
 import { useTheme } from '../utils/theme'
 import { startTitleMarquee, stopTitleMarquee } from '../utils/marquee'
+import { formatTimestamp } from '../utils/time'
 import {
   searchTMDB,
   getTMDBDetails,
@@ -464,6 +473,33 @@ const setItemStatus = (item: TrackedMedia, status: MediaStatus) => {
   if (status !== item.status) runStep(changeStatus(item, status))
 }
 
+// Tabs: recent titles, or the notification log the background writes
+const popupTab = ref<'recent' | 'notifications'>('recent')
+const notifications = ref<NotificationItem[]>([])
+const NOTIFICATION_LOG_KEY = 'nyatching_notification_log'
+
+const watchNotifications = () => {
+  getNotificationLog().then((list) => (notifications.value = list)).catch(() => {})
+  try {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[NOTIFICATION_LOG_KEY]) {
+        notifications.value = (changes[NOTIFICATION_LOG_KEY].newValue as NotificationItem[]) ?? []
+      }
+    })
+  } catch {
+    // Storage events are unavailable outside the extension.
+  }
+}
+
+const dismissNotification = async (id: string) => {
+  notifications.value = await deleteNotificationLogItem(id)
+}
+
+const clearNotifications = async () => {
+  await clearAllNotificationLogs()
+  notifications.value = []
+}
+
 const closeSelects = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   if (!target.closest('.dropdown-group')) isStatusOpen.value = false
@@ -473,6 +509,7 @@ const closeSelects = (event: MouseEvent) => {
 onMounted(() => {
   Promise.all([getAllMedia(), loadQuickFilter()]).then(([list]) => setMedia(list))
   detectImdbActiveTab()
+  watchNotifications()
   onMediaStorageChange(setMedia)
   document.addEventListener('click', closeSelects)
 })
@@ -757,149 +794,223 @@ const handleAddMediaSubmit = async () => {
           </button>
         </div>
 
-        <section v-if="mediaCount > 0" class="quick" aria-label="Quick progress">
-          <div class="quick-bar">
-            <input
-              v-model="quickQuery"
-              type="search"
-              class="quick-search"
-              placeholder="Search your list"
-              aria-label="Search your list"
-              autocomplete="off"
-            />
-            <div class="select quick-filter" :class="{ 'is-open': isQuickFilterOpen }">
-              <div
-                class="selected"
-                title="Choose which status to show"
-                @click.stop="isQuickFilterOpen = !isQuickFilterOpen"
-              >
-                <span>{{ formatFilter(quickFilter) }}</span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  height="1em"
-                  viewBox="0 0 512 512"
-                  class="arrow"
+        <section v-if="mediaCount > 0 || notifications.length > 0" class="quick">
+          <div class="popup-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              class="popup-tab"
+              :class="{ active: popupTab === 'recent' }"
+              :aria-selected="popupTab === 'recent'"
+              @click="popupTab = 'recent'"
+            >
+              Recent
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="popup-tab"
+              :class="{ active: popupTab === 'notifications' }"
+              :aria-selected="popupTab === 'notifications'"
+              @click="popupTab = 'notifications'"
+            >
+              Notifications
+              <span v-if="notifications.length" class="tab-count">{{ notifications.length }}</span>
+            </button>
+            <button
+              v-if="popupTab === 'notifications' && notifications.length"
+              type="button"
+              class="tab-action"
+              @click="clearNotifications"
+            >
+              Clear
+            </button>
+          </div>
+
+          <template v-if="popupTab === 'recent'">
+            <div class="quick-bar">
+              <input
+                v-model="quickQuery"
+                type="search"
+                class="quick-search"
+                placeholder="Search your list"
+                aria-label="Search your list"
+                autocomplete="off"
+              />
+              <div class="select quick-filter" :class="{ 'is-open': isQuickFilterOpen }">
+                <div
+                  class="selected"
+                  title="Choose which status to show"
+                  @click.stop="isQuickFilterOpen = !isQuickFilterOpen"
                 >
-                  <path
-                    d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
-                  ></path>
-                </svg>
-              </div>
-              <div class="options">
-                <label
-                  v-for="f in QUICK_FILTERS"
-                  :key="f"
-                  class="option-item"
-                  :class="{ active: quickFilter === f }"
-                  @click="setQuickFilter(f)"
-                >
-                  {{ formatFilter(f) }}
-                </label>
+                  <span>{{ formatFilter(quickFilter) }}</span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    height="1em"
+                    viewBox="0 0 512 512"
+                    class="arrow"
+                  >
+                    <path
+                      d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
+                    ></path>
+                  </svg>
+                </div>
+                <div class="options">
+                  <label
+                    v-for="f in QUICK_FILTERS"
+                    :key="f"
+                    class="option-item"
+                    :class="{ active: quickFilter === f }"
+                    @click="setQuickFilter(f)"
+                  >
+                    {{ formatFilter(f) }}
+                  </label>
+                </div>
               </div>
             </div>
-          </div>
-          <span class="quick-label">
-            {{ quickQuery.trim() ? `${quickList.length} found` : 'Recent' }}
-          </span>
-          <ul v-if="quickList.length" class="quick-list">
-            <li v-for="item in quickList" :key="item.id" class="quick-row">
-              <img
-                v-if="item.posterPath && !failedPosters[item.id]"
-                class="quick-poster"
-                :src="item.posterPath"
-                alt=""
-                loading="lazy"
-                @error="failedPosters[item.id] = true"
-              />
-              <span v-else class="quick-poster" aria-hidden="true"></span>
-              <div class="quick-info">
-                <a
-                  v-if="item.watchingUrl"
-                  class="quick-title"
-                  :href="item.watchingUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  :title="item.title"
-                >
-                  <span class="title-marquee" @mouseenter="startTitleMarquee" @mouseleave="stopTitleMarquee">
-                    <span class="title-track">{{ item.title }}</span>
+            <span v-if="quickQuery.trim()" class="quick-label">{{ quickList.length }} found</span>
+            <ul v-if="quickList.length" class="quick-list">
+              <li v-for="item in quickList" :key="item.id" class="quick-row">
+                <img
+                  v-if="item.posterPath && !failedPosters[item.id]"
+                  class="quick-poster"
+                  :src="item.posterPath"
+                  alt=""
+                  loading="lazy"
+                  @error="failedPosters[item.id] = true"
+                />
+                <span v-else class="quick-poster" aria-hidden="true"></span>
+                <div class="quick-info">
+                  <a
+                    v-if="item.watchingUrl"
+                    class="quick-title"
+                    :href="item.watchingUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :title="item.title"
+                  >
+                    <span class="title-marquee" @mouseenter="startTitleMarquee" @mouseleave="stopTitleMarquee">
+                      <span class="title-track">{{ item.title }}</span>
+                    </span>
+                  </a>
+                  <span v-else class="quick-title" :title="item.title">
+                    <span class="title-marquee" @mouseenter="startTitleMarquee" @mouseleave="stopTitleMarquee">
+                      <span class="title-track">{{ item.title }}</span>
+                    </span>
                   </span>
-                </a>
-                <span v-else class="quick-title" :title="item.title">
-                  <span class="title-marquee" @mouseenter="startTitleMarquee" @mouseleave="stopTitleMarquee">
-                    <span class="title-track">{{ item.title }}</span>
-                  </span>
-                </span>
-                <div class="quick-controls">
-                  <StatusSelect
-                    compact
-                    class="quick-status"
-                    :model-value="item.status"
-                    :label="`Status for ${item.title}`"
-                    @update:model-value="setItemStatus(item, $event)"
-                  />
-                  <div v-if="isShow(item)" class="quick-steps">
-                    <div class="stepper" :title="item.totalSeasons ? `Season ${item.currentSeason} of ${item.totalSeasons}` : `Season ${item.currentSeason}`">
-                      <span class="stepper-val">S {{ item.currentSeason }}</span>
-                      <button
-                        type="button"
-                        class="step-btn"
-                        :disabled="item.currentSeason <= episodeFloor(item)"
-                        aria-label="Back one season"
-                        @click="runStep(stepSeason(item, -1))"
-                      >−</button>
-                      <button
-                        type="button"
-                        class="step-btn"
-                        :disabled="!!item.totalSeasons && item.currentSeason >= item.totalSeasons"
-                        aria-label="Forward one season"
-                        @click="runStep(stepSeason(item, 1))"
-                      >+</button>
+                  <div class="quick-controls">
+                    <StatusSelect
+                      compact
+                      class="quick-status"
+                      :model-value="item.status"
+                      :label="`Status for ${item.title}`"
+                      @update:model-value="setItemStatus(item, $event)"
+                    />
+                    <div v-if="isShow(item)" class="quick-steps">
+                      <div class="stepper" :title="item.totalSeasons ? `Season ${item.currentSeason} of ${item.totalSeasons}` : `Season ${item.currentSeason}`">
+                        <span class="stepper-val">S {{ item.currentSeason }}</span>
+                        <button
+                          type="button"
+                          class="step-btn"
+                          :disabled="item.currentSeason <= episodeFloor(item)"
+                          aria-label="Back one season"
+                          @click="runStep(stepSeason(item, -1))"
+                        >−</button>
+                        <button
+                          type="button"
+                          class="step-btn"
+                          :disabled="!!item.totalSeasons && item.currentSeason >= item.totalSeasons"
+                          aria-label="Forward one season"
+                          @click="runStep(stepSeason(item, 1))"
+                        >+</button>
+                      </div>
+                      <div class="stepper" :title="item.totalEpisodes ? `Episode ${item.currentEpisode} of ${item.totalEpisodes}` : `Episode ${item.currentEpisode}`">
+                        <span class="stepper-val">Ep {{ item.currentEpisode }}</span>
+                        <button
+                          type="button"
+                          class="step-btn"
+                          :disabled="item.currentEpisode <= episodeFloor(item)"
+                          aria-label="Back one episode"
+                          @click="runStep(stepEpisode(item, -1))"
+                        >−</button>
+                        <button
+                          type="button"
+                          class="step-btn"
+                          :disabled="!!item.totalEpisodes && item.currentEpisode >= item.totalEpisodes"
+                          aria-label="Forward one episode"
+                          @click="runStep(stepEpisode(item, 1))"
+                        >+</button>
+                      </div>
                     </div>
-                    <div class="stepper" :title="item.totalEpisodes ? `Episode ${item.currentEpisode} of ${item.totalEpisodes}` : `Episode ${item.currentEpisode}`">
-                      <span class="stepper-val">Ep {{ item.currentEpisode }}</span>
-                      <button
-                        type="button"
-                        class="step-btn"
-                        :disabled="item.currentEpisode <= episodeFloor(item)"
-                        aria-label="Back one episode"
-                        @click="runStep(stepEpisode(item, -1))"
-                      >−</button>
-                      <button
-                        type="button"
-                        class="step-btn"
-                        :disabled="!!item.totalEpisodes && item.currentEpisode >= item.totalEpisodes"
-                        aria-label="Forward one episode"
-                        @click="runStep(stepEpisode(item, 1))"
-                      >+</button>
-                    </div>
-                  </div>
-                  <div v-else class="quick-steps">
-                    <div class="stepper" title="Minutes watched">
-                      <span class="stepper-val">{{ item.runtimeMinutes ? `${item.currentMinutes}/${item.runtimeMinutes}m` : `${item.currentMinutes}m` }}</span>
-                      <button
-                        type="button"
-                        class="step-btn"
-                        :disabled="item.currentMinutes <= 0"
-                        :aria-label="`Back ${MOVIE_STEP_MINUTES} minutes`"
-                        @click="runStep(stepMinutes(item, -MOVIE_STEP_MINUTES))"
-                      >−</button>
-                      <button
-                        type="button"
-                        class="step-btn"
-                        :disabled="!!item.runtimeMinutes && item.currentMinutes >= item.runtimeMinutes"
-                        :aria-label="`Forward ${MOVIE_STEP_MINUTES} minutes`"
-                        @click="runStep(stepMinutes(item, MOVIE_STEP_MINUTES))"
-                      >+</button>
+                    <div v-else class="quick-steps">
+                      <div class="stepper" title="Minutes watched">
+                        <span class="stepper-val">{{ item.runtimeMinutes ? `${item.currentMinutes}/${item.runtimeMinutes}m` : `${item.currentMinutes}m` }}</span>
+                        <button
+                          type="button"
+                          class="step-btn"
+                          :disabled="item.currentMinutes <= 0"
+                          :aria-label="`Back ${MOVIE_STEP_MINUTES} minutes`"
+                          @click="runStep(stepMinutes(item, -MOVIE_STEP_MINUTES))"
+                        >−</button>
+                        <button
+                          type="button"
+                          class="step-btn"
+                          :disabled="!!item.runtimeMinutes && item.currentMinutes >= item.runtimeMinutes"
+                          :aria-label="`Forward ${MOVIE_STEP_MINUTES} minutes`"
+                          @click="runStep(stepMinutes(item, MOVIE_STEP_MINUTES))"
+                        >+</button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </li>
-          </ul>
-          <p v-else class="quick-empty">
-            {{ quickQuery.trim() ? 'No matches' : 'Nothing here yet' }}
-          </p>
+              </li>
+            </ul>
+            <p v-else class="quick-empty">
+              {{ quickQuery.trim() ? 'No matches' : 'Nothing here yet' }}
+            </p>
+          </template>
+
+          <template v-else>
+            <ul v-if="notifications.length" class="quick-list">
+              <li v-for="n in notifications" :key="n.id" class="quick-row notif-row">
+                <img
+                  v-if="n.posterPath && !failedPosters[n.id]"
+                  class="quick-poster"
+                  :src="n.posterPath"
+                  alt=""
+                  loading="lazy"
+                  @error="failedPosters[n.id] = true"
+                />
+                <span v-else class="quick-poster" aria-hidden="true"></span>
+                <div class="quick-info">
+                  <div class="notif-head">
+                    <span class="quick-title" :title="n.title">
+                      <span class="title-marquee" @mouseenter="startTitleMarquee" @mouseleave="stopTitleMarquee">
+                        <span class="title-track">{{ n.title }}</span>
+                      </span>
+                    </span>
+                    <span class="notif-time">{{ formatTimestamp(n.timestamp) }}</span>
+                  </div>
+                  <p class="notif-msg">{{ n.message }}</p>
+                  <a
+                    v-if="n.watchingUrl"
+                    class="notif-link"
+                    :href="n.watchingUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >Open watching link</a>
+                </div>
+                <button
+                  type="button"
+                  class="notif-dismiss"
+                  :aria-label="`Dismiss notification for ${n.title}`"
+                  title="Dismiss"
+                  @click="dismissNotification(n.id)"
+                >&times;</button>
+              </li>
+            </ul>
+            <p v-else class="quick-empty">No notifications</p>
+          </template>
         </section>
       </div>
 
@@ -1380,6 +1491,67 @@ body::-webkit-scrollbar {
   height: 100%;
 }
 
+/* ---------- Tabs ---------- */
+.popup-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.popup-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: -1px;
+  padding: 0.3rem 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.popup-tab:hover {
+  color: var(--text-primary);
+}
+
+.popup-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.tab-count {
+  min-width: 1rem;
+  padding: 0 0.25rem;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 0.58rem;
+  line-height: 0.95rem;
+  text-align: center;
+}
+
+.tab-action {
+  margin-left: auto;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+
+.tab-action:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 /* ---------- Quick List ---------- */
 .quick {
   display: flex;
@@ -1558,6 +1730,63 @@ a.quick-title:hover {
 .step-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.notif-row {
+  align-items: flex-start;
+}
+
+.notif-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.notif-head .quick-title {
+  flex: 1;
+}
+
+.notif-time {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.notif-msg {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.notif-link {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.notif-link:hover {
+  text-decoration: underline;
+}
+
+.notif-dismiss {
+  flex-shrink: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.notif-dismiss:hover {
+  color: var(--text-primary);
 }
 
 .quick-empty {

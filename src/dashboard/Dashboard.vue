@@ -21,6 +21,7 @@ import {
 import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
 import { startTitleMarquee, stopTitleMarquee } from '../utils/marquee'
+import { formatTimestamp } from '../utils/time'
 import SettingsModal from './Settings.vue'
 import DataModal from './DataModal.vue'
 import WatchLinkModal from './WatchLinkModal.vue'
@@ -158,17 +159,6 @@ const handleDismissNotification = async (id: string) => {
 const handleClearAllNotifications = async () => {
   await clearAllNotificationLogs()
   notificationLogs.value = []
-}
-
-const formatTimestamp = (ts: number): string => {
-  const diffMs = Date.now() - ts
-  const diffMins = Math.floor(diffMs / (1000 * 60))
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours}h ago`
-  const diffDays = Math.floor(diffHours / 24)
-  return `${diffDays}d ago`
 }
 
 // Track image load errors to fallback gracefully
