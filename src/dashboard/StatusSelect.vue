@@ -2,12 +2,14 @@
 import { ref, onUnmounted } from 'vue'
 import { MediaStatus } from '../types'
 
-defineProps<{ modelValue: MediaStatus; label: string }>()
+// compact: the popup's filled style, with the menu opening from the left edge
+const props = defineProps<{ modelValue: MediaStatus; label: string; compact?: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: MediaStatus): void }>()
 
 const STATUSES: MediaStatus[] = ['watching', 'waiting', 'next', 'completed', 'dropped']
 const MENU_HEIGHT = 170
 const MENU_WIDTH = 125
+const COMPACT_MENU_WIDTH = 104
 
 const statusLabel = (s: MediaStatus) =>
   s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1)
@@ -31,8 +33,10 @@ const toggle = () => {
   const r = root.value.getBoundingClientRect()
   // Fixed so the scrolling list cannot clip it; opens upward near the bottom of the window
   const up = r.bottom + MENU_HEIGHT > window.innerHeight
+  const width = props.compact ? COMPACT_MENU_WIDTH : MENU_WIDTH
+  const left = props.compact ? Math.min(r.left, window.innerWidth - width - 4) : r.right - width
   menuStyle.value = {
-    left: `${r.right - MENU_WIDTH}px`,
+    left: `${left}px`,
     ...(up
       ? { bottom: `${window.innerHeight - r.top + 4}px` }
       : { top: `${r.bottom + 4}px` }),
@@ -50,7 +54,7 @@ onUnmounted(close)
 </script>
 
 <template>
-  <div ref="root" class="select" :class="{ 'is-open': menuStyle }" @keydown.esc="close">
+  <div ref="root" class="select" :class="{ 'is-open': menuStyle, compact }" @keydown.esc="close">
     <button
       type="button"
       class="selected"
@@ -155,5 +159,28 @@ onUnmounted(close)
   background-color: var(--accent);
   color: var(--accent-contrast);
   font-weight: 700;
+}
+.compact .selected {
+  height: 1.35rem;
+  padding: 0 0.45rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background-color: color-mix(in srgb, var(--text-primary) 9%, var(--bg));
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+
+.compact .arrow {
+  height: 7px;
+  width: 10px;
+}
+
+.compact .options {
+  width: 104px;
+}
+
+.compact .option-item {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.72rem;
 }
 </style>

@@ -128,3 +128,38 @@ input[type='number'] {
 :root.theme-switching *::after {
   transition: none !important;
 }
+
+/* Hover scroll for cut-off titles (utils/marquee.ts) */
+.title-marquee {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.title-track {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.title-marquee.is-overflowing .title-track {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: title-carousel var(--title-duration, 4s) linear infinite alternate;
+}
+
+@keyframes title-carousel {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--title-shift, 0px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-marquee.is-overflowing .title-track {
+    animation: none;
+  }
+}

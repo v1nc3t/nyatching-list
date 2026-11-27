@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import browser from 'webextension-polyfill'
-import { MediaStatus, TrackedMedia, isShow } from '../types'
+import { MediaStatus, TrackedMedia, Show, isShow } from '../types'
 import { getAllMedia, addMedia, onMediaStorageChange, AddMediaInput } from '../storage'
 import { useTheme } from '../utils/theme'
+import { startTitleMarquee, stopTitleMarquee } from '../utils/marquee'
 import {
   searchTMDB,
   getTMDBDetails,
@@ -15,7 +16,8 @@ import {
   TMDBSuggestion,
   TMDBShowInfo,
 } from '../services/tmdb'
-import { stepEpisode, stepMinutes } from '../services/progress'
+import { stepSeason, stepEpisode, stepMinutes, changeStatus } from '../services/progress'
+import StatusSelect from '../dashboard/StatusSelect.vue'
 
 // Theme (Shared via extension storage)
 const { theme, toggleTheme } = useTheme()
@@ -452,34 +454,14 @@ const quickList = computed(() => {
   return q ? sorted : sorted.slice(0, RECENT_LIMIT)
 })
 
-const progressText = (item: TrackedMedia) => {
-  if (isShow(item)) {
-    if (item.currentSeason < 1) return 'Not started'
-    const total = item.totalEpisodes ? `/${item.totalEpisodes}` : ''
-    return `S${item.currentSeason} · E${item.currentEpisode}${total}`
-  }
-  return item.runtimeMinutes
-    ? `${item.currentMinutes}/${item.runtimeMinutes}m`
-    : `${item.currentMinutes}m`
-}
+const episodeFloor = (show: Show) => (show.status === 'next' ? 0 : 1)
 
-const canStep = (item: TrackedMedia, delta: number) => {
-  if (isShow(item)) {
-    if (delta < 0) return item.currentEpisode > (item.status === 'next' ? 0 : 1)
-    return !item.totalEpisodes || item.currentEpisode < item.totalEpisodes
-  }
-  if (delta < 0) return item.currentMinutes > 0
-  return !item.runtimeMinutes || item.currentMinutes < item.runtimeMinutes
-}
-
-const stepProgress = (item: TrackedMedia, delta: number) => {
-  const step = isShow(item) ? stepEpisode(item, delta) : stepMinutes(item, delta * MOVIE_STEP_MINUTES)
+const runStep = (step: Promise<void>) => {
   step.catch((err) => console.error('Failed to update progress:', err))
 }
 
-const stepLabel = (item: TrackedMedia, delta: number) => {
-  const dir = delta < 0 ? 'Back' : 'Forward'
-  return isShow(item) ? `${dir} one episode` : `${dir} ${MOVIE_STEP_MINUTES} minutes`
+const setItemStatus = (item: TrackedMedia, status: MediaStatus) => {
+  if (status !== item.status) runStep(changeStatus(item, status))
 }
 
 const closeSelects = (event: MouseEvent) => {
@@ -838,29 +820,80 @@ const handleAddMediaSubmit = async () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   :title="item.title"
-                >{{ item.title }}</a>
-                <span v-else class="quick-title" :title="item.title">{{ item.title }}</span>
-                <span class="quick-progress">
-                  {{ progressText(item) }}<template v-if="item.status !== quickFilter"> · {{ formatStatus(item.status) }}</template>
+                >
+                  <span class="title-marquee" @mouseenter="startTitleMarquee" @mouseleave="stopTitleMarquee">
+                    <span class="title-track">{{ item.title }}</span>
+                  </span>
+                </a>
+                <span v-else class="quick-title" :title="item.title">
+                  <span class="title-marquee" @mouseenter="startTitleMarquee" @mouseleave="stopTitleMarquee">
+                    <span class="title-track">{{ item.title }}</span>
+                  </span>
                 </span>
-              </div>
-              <div class="quick-steps">
-                <button
-                  type="button"
-                  class="step-btn"
-                  :disabled="!canStep(item, -1)"
-                  :aria-label="stepLabel(item, -1)"
-                  :title="stepLabel(item, -1)"
-                  @click="stepProgress(item, -1)"
-                >−</button>
-                <button
-                  type="button"
-                  class="step-btn"
-                  :disabled="!canStep(item, 1)"
-                  :aria-label="stepLabel(item, 1)"
-                  :title="stepLabel(item, 1)"
-                  @click="stepProgress(item, 1)"
-                >+</button>
+                <div class="quick-controls">
+                  <StatusSelect
+                    compact
+                    class="quick-status"
+                    :model-value="item.status"
+                    :label="`Status for ${item.title}`"
+                    @update:model-value="setItemStatus(item, $event)"
+                  />
+                  <div v-if="isShow(item)" class="quick-steps">
+                    <div class="stepper" :title="item.totalSeasons ? `Season ${item.currentSeason} of ${item.totalSeasons}` : `Season ${item.currentSeason}`">
+                      <span class="stepper-val">S {{ item.currentSeason }}</span>
+                      <button
+                        type="button"
+                        class="step-btn"
+                        :disabled="item.currentSeason <= episodeFloor(item)"
+                        aria-label="Back one season"
+                        @click="runStep(stepSeason(item, -1))"
+                      >−</button>
+                      <button
+                        type="button"
+                        class="step-btn"
+                        :disabled="!!item.totalSeasons && item.currentSeason >= item.totalSeasons"
+                        aria-label="Forward one season"
+                        @click="runStep(stepSeason(item, 1))"
+                      >+</button>
+                    </div>
+                    <div class="stepper" :title="item.totalEpisodes ? `Episode ${item.currentEpisode} of ${item.totalEpisodes}` : `Episode ${item.currentEpisode}`">
+                      <span class="stepper-val">Ep {{ item.currentEpisode }}</span>
+                      <button
+                        type="button"
+                        class="step-btn"
+                        :disabled="item.currentEpisode <= episodeFloor(item)"
+                        aria-label="Back one episode"
+                        @click="runStep(stepEpisode(item, -1))"
+                      >−</button>
+                      <button
+                        type="button"
+                        class="step-btn"
+                        :disabled="!!item.totalEpisodes && item.currentEpisode >= item.totalEpisodes"
+                        aria-label="Forward one episode"
+                        @click="runStep(stepEpisode(item, 1))"
+                      >+</button>
+                    </div>
+                  </div>
+                  <div v-else class="quick-steps">
+                    <div class="stepper" title="Minutes watched">
+                      <span class="stepper-val">{{ item.runtimeMinutes ? `${item.currentMinutes}/${item.runtimeMinutes}m` : `${item.currentMinutes}m` }}</span>
+                      <button
+                        type="button"
+                        class="step-btn"
+                        :disabled="item.currentMinutes <= 0"
+                        :aria-label="`Back ${MOVIE_STEP_MINUTES} minutes`"
+                        @click="runStep(stepMinutes(item, -MOVIE_STEP_MINUTES))"
+                      >−</button>
+                      <button
+                        type="button"
+                        class="step-btn"
+                        :disabled="!!item.runtimeMinutes && item.currentMinutes >= item.runtimeMinutes"
+                        :aria-label="`Forward ${MOVIE_STEP_MINUTES} minutes`"
+                        @click="runStep(stepMinutes(item, MOVIE_STEP_MINUTES))"
+                      >+</button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </li>
           </ul>
@@ -1448,19 +1481,18 @@ body::-webkit-scrollbar {
 .quick-info {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.3rem;
   flex: 1;
   min-width: 0;
 }
 
 .quick-title {
-  overflow: hidden;
+  display: block;
+  min-width: 0;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-primary);
   text-decoration: none;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 a.quick-title:hover {
@@ -1468,30 +1500,51 @@ a.quick-title:hover {
   text-decoration: underline;
 }
 
-.quick-progress {
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  color: var(--text-secondary);
+.quick-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+}
+
+/* .select sets width: 100% later in the file */
+.select.quick-status {
+  width: auto;
 }
 
 .quick-steps {
   display: flex;
-  flex-shrink: 0;
-  gap: 0.2rem;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.stepper-val {
+  margin-right: 0.15rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .step-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 1.35rem;
+  height: 1.35rem;
   padding: 0;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;

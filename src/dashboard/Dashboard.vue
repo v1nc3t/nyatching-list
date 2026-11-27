@@ -2,7 +2,6 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import {
   TrackedMedia,
-  Show,
   Movie,
   MediaStatus,
   NotificationItem,
@@ -21,19 +20,16 @@ import {
 } from '../storage'
 import browser from 'webextension-polyfill'
 import { useTheme } from '../utils/theme'
+import { startTitleMarquee, stopTitleMarquee } from '../utils/marquee'
 import SettingsModal from './Settings.vue'
 import DataModal from './DataModal.vue'
 import WatchLinkModal from './WatchLinkModal.vue'
-import {
-  getAiredEpisodeCountForSeason,
-  statusAfterShowProgress,
-  completedProgressFromShowInfo,
-  resolveCompletedShowProgress,
-  resolveCompletedMovieProgress,
-} from '../services/tmdb'
+import { getAiredEpisodeCountForSeason } from '../services/tmdb'
 import {
   loadShowInfo,
+  stepSeason as handleSeasonChange,
   stepEpisode as handleEpisodeChange,
+  changeStatus,
   stepMinutes as handleMinutesChange,
 } from '../services/progress'
 
@@ -223,37 +219,6 @@ const filteredMedia = computed(() => {
 })
 
 // Handlers for Show
-const handleSeasonChange = async (show: Show, delta: number) => {
-  const floor = show.status === 'next' ? 0 : 1
-  let nextSeason = Math.max(floor, show.currentSeason + delta)
-
-  if (show.totalSeasons && show.totalSeasons > 0) {
-    nextSeason = Math.min(nextSeason, show.totalSeasons)
-  }
-
-  const info = show.tmdbId ? await loadShowInfo(show.tmdbId) : null
-  const updates: Partial<Show> & { id: string } = {
-    id: show.id,
-    currentSeason: nextSeason,
-    currentEpisode: 1,
-    status: statusAfterShowProgress({
-      status: show.status,
-      season: show.currentSeason,
-      episode: show.currentEpisode,
-      nextSeason,
-      nextEpisode: 1,
-      info,
-    }),
-  }
-
-  if (info) {
-    const airedCount = getAiredEpisodeCountForSeason(info, nextSeason)
-    updates.totalEpisodes = airedCount || undefined
-  }
-
-  await updateMedia(updates)
-}
-
 const handleNotifyToggle = async (item: TrackedMedia) => {
   if (notifyLocked(item)) return
   await updateMedia({ id: item.id, notify: !isNotifyEnabled(item) })
@@ -307,49 +272,7 @@ const handleMinutesInput = async (event: Event, movie: Movie) => {
 
 const handleStatusChange = async (item: TrackedMedia, newStatus: MediaStatus) => {
   openSelectKey.value = null
-  if (isShow(item)) {
-    const updates: Partial<Show> & { id: string } = { id: item.id, status: newStatus }
-
-    if (newStatus === 'next') {
-      updates.currentSeason = 0
-      updates.currentEpisode = 0
-    } else if (newStatus === 'completed') {
-      let progress = null
-      if (item.tmdbId) {
-        const info = await loadShowInfo(item.tmdbId)
-        if (info) progress = completedProgressFromShowInfo(info)
-      }
-      if (!progress) {
-        progress = await resolveCompletedShowProgress(undefined, item)
-      }
-      if (progress) {
-        updates.currentSeason = progress.currentSeason
-        updates.currentEpisode = progress.currentEpisode
-        updates.totalSeasons = progress.totalSeasons
-        updates.totalEpisodes = progress.totalEpisodes
-      }
-    } else if (item.status === 'next') {
-      if (item.currentSeason < 1) updates.currentSeason = 1
-      if (item.currentEpisode < 1) updates.currentEpisode = 1
-    }
-
-    await updateMedia(updates)
-    return
-  }
-
-  const updates: Partial<Movie> & { id: string } = { id: item.id, status: newStatus }
-
-  if (newStatus === 'next') {
-    updates.currentMinutes = 0
-  } else if (newStatus === 'completed') {
-    const progress = await resolveCompletedMovieProgress(item.tmdbId, item)
-    updates.currentMinutes = progress.currentMinutes
-    if (progress.runtimeMinutes) {
-      updates.runtimeMinutes = progress.runtimeMinutes
-    }
-  }
-
-  await updateMedia(updates)
+  await changeStatus(item, newStatus)
 }
 
 const handleDelete = async (id: string) => {
@@ -360,27 +283,6 @@ const handleDelete = async (id: string) => {
 
 const formatStatus = (s: string) =>
   s === 'all' ? 'All Statuses' : s === 'next' ? 'Next up' : s.charAt(0).toUpperCase() + s.slice(1)
-
-const startTitleMarquee = (event: Event) => {
-  const marquee = event.currentTarget as HTMLElement
-  const track = marquee.querySelector('.title-track') as HTMLElement | null
-  if (!track) return
-
-  const overflow = track.scrollWidth - marquee.clientWidth
-  if (overflow <= 1) {
-    marquee.classList.remove('is-overflowing')
-    return
-  }
-
-  marquee.style.setProperty('--title-shift', `-${overflow}px`)
-  marquee.style.setProperty('--title-duration', `${Math.min(10, Math.max(2.5, overflow / 45))}s`)
-  marquee.classList.add('is-overflowing')
-}
-
-const stopTitleMarquee = (event: Event) => {
-  const marquee = event.currentTarget as HTMLElement
-  marquee.classList.remove('is-overflowing')
-}
 </script>
 
 <template>
@@ -1661,40 +1563,6 @@ html, body {
 
 .card-title-link:hover {
   color: var(--accent);
-}
-
-.title-marquee {
-  display: block;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-}
-
-.title-track {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
-
-.title-marquee.is-overflowing .title-track {
-  max-width: none;
-  overflow: visible;
-  text-overflow: clip;
-  animation: title-carousel var(--title-duration, 4s) linear infinite alternate;
-}
-
-@keyframes title-carousel {
-  0%, 12% { transform: translateX(0); }
-  88%, 100% { transform: translateX(var(--title-shift, 0px)); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .title-marquee.is-overflowing .title-track {
-    animation: none;
-  }
 }
 
 .link-icon {
