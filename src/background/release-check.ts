@@ -125,22 +125,21 @@ export const nextEpisodeToWatch = (
 const hasAired = (latest: TMDBAiredEpisode, target: TMDBAiredEpisode): boolean =>
   compareAiredEpisodes(latest, target) >= 0
 
-const watchHint = (show: Show): string =>
-  show.watchingUrl?.trim() ? ' Click to open your watching link.' : ''
-
 export const buildReleaseNotice = (show: Show, next: TMDBAiredEpisode): ReleaseNotice => {
   const isNewSeason = next.season > show.currentSeason
-  const episodeLabel = formatEpisodeLabel(next)
-  const hint = watchHint(show)
+  // A new season names the season too; within a season the episode is enough
+  const episodeLabel = isNewSeason ? formatEpisodeLabel(next) : `Episode ${next.episode}`
+  const text = `${episodeLabel} is out, check it out!`
   const watchingUrl = show.watchingUrl?.trim() || undefined
+  const link = watchingUrl && /^https?:\/\//i.test(watchingUrl) ? watchingUrl : undefined
   const kind: ReleaseKind = isNewSeason ? 'new_season' : 'new_episode'
 
   return {
     kind,
     title: show.title,
-    message: `${episodeLabel} is out.${hint}`,
+    message: link ? `${text}\n${link}` : text,
     logTitle: show.title,
-    logMessage: `${episodeLabel} is out.`,
+    logMessage: text,
     watchingUrl,
   }
 }

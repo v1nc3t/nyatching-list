@@ -75,13 +75,13 @@ export interface ReminderNotice {
 export const buildReminderNotice = (item: TrackedMedia): ReminderNotice => {
   const url = item.watchingUrl?.trim()
   const link = url && /^https?:\/\//i.test(url) ? url : undefined
-  const hint = link ? ' Click to open your watching link.' : ''
+  const text = `Have you forgotten about ${item.title}? Or forgot to update progress?`
   return {
     showId: item.id,
     title: item.title,
-    message: `Still watching? Update your progress.${hint}`,
+    message: text,
     logTitle: item.title,
-    logMessage: 'Still watching? Update your progress.',
+    logMessage: text,
     posterPath: item.posterPath,
     watchingUrl: link,
   }
