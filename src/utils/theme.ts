@@ -19,9 +19,13 @@ export function applyThemeToDocument(theme: Theme): void {
  * Resolves once the swap has run.
  */
 function revealTheme(origin: Element | null, swap: () => void): Promise<void> {
+  const root = document.documentElement
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  if (!origin || reduceMotion || !document.startViewTransition) {
+  if (!origin || reduceMotion || document.hidden || !document.startViewTransition) {
+    // Swap at once, without element color transitions fading part of the page
+    root.classList.add('theme-switching')
     swap()
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('theme-switching')))
     return Promise.resolve()
   }
 
@@ -33,7 +37,6 @@ function revealTheme(origin: Element | null, swap: () => void): Promise<void> {
 
   // The reveal is a CSS keyframe (theme.css) so it runs from the first frame;
   // starting it from JS after `ready` let Firefox paint the uncovered new theme first
-  const root = document.documentElement
   root.style.setProperty('--reveal-x', `${x}px`)
   root.style.setProperty('--reveal-y', `${y}px`)
   root.style.setProperty('--reveal-r', `${radius}px`)
@@ -84,8 +87,12 @@ export function useTheme() {
       if (areaName === 'local' && changes[THEME_STORAGE_KEY]) {
         const newTheme = changes[THEME_STORAGE_KEY].newValue as Theme
         if (newTheme && newTheme !== theme.value) {
-          theme.value = newTheme
-          applyThemeToDocument(newTheme)
+          // Toggled in another page (e.g. the popup over the dashboard): reveal from this
+          // page's own toggle, so it animates the same way instead of a partial color fade
+          revealTheme(document.querySelector('[data-theme-toggle]'), () => {
+            theme.value = newTheme
+            applyThemeToDocument(newTheme)
+          })
         }
       }
     })

@@ -442,6 +442,7 @@ const stopTitleMarquee = (event: Event) => {
           <button
             type="button"
             class="icon-btn"
+            data-theme-toggle
             @click="toggleTheme"
             :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
             :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`"
